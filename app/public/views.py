@@ -79,6 +79,6 @@ def check_radio(record_id):
     return raw_audio, {'Content-Type': 'audio/aacp'}
 
 
-@application.route('/verifier')
+@application.route('/verifier/')
 def index():
     return 'Under construction...'
