@@ -8,7 +8,7 @@ from flask import jsonify
 base_url = json.load(application.open_resource('config.json'))['beacon-server-url']
 
 
-@application.route('/beacon/1.0/check_earthquake_web/id/<record_id>')
+@application.route('/verifier/1.0/check_earthquake_web/id/<record_id>')
 def check_earthquake_web(record_id):
     raw_data_from_record = urllib.request.urlopen(base_url + "/beacon/1.0/raw/id/" + record_id)
     raw_data_json = json.loads(raw_data_from_record.read())
@@ -26,7 +26,7 @@ def check_earthquake_web(record_id):
     return jsonify(eq_web_object)
 
 
-@application.route('/beacon/1.0/check_earthquake_twitter/id/<record_id>')
+@application.route('/verifier/1.0/check_earthquake_twitter/id/<record_id>')
 def check_earthquake_twitter(record_id):
     raw_data_from_record = urllib.request.urlopen(base_url + "/beacon/1.0/raw/id/" + record_id)
     raw_data_json = json.loads(raw_data_from_record.read())
@@ -44,7 +44,7 @@ def check_earthquake_twitter(record_id):
     return jsonify(eq_tw_object)
 
 
-@application.route('/beacon/1.0/check_trending/id/<record_id>')
+@application.route('/verifier/1.0/check_trending/id/<record_id>')
 def check_trending(record_id):
     raw_data_from_record = urllib.request.urlopen(base_url + "/beacon/1.0/raw/id/" + record_id)
     raw_data_json = json.loads(raw_data_from_record.read())
@@ -64,7 +64,7 @@ def check_trending(record_id):
     return jsonify(trending_object)
 
 
-@application.route('/beacon/1.0/check_radio/id/<record_id>')
+@application.route('/verifier/1.0/check_radio/id/<record_id>')
 def check_radio(record_id):
     raw_data_from_record = urllib.request.urlopen(base_url + "/beacon/1.0/raw/id/" + record_id)
     raw_data_json = json.loads(raw_data_from_record.read())
@@ -79,6 +79,6 @@ def check_radio(record_id):
     return raw_audio, {'Content-Type': 'audio/aacp'}
 
 
-@application.route('/')
+@application.route('/verifier')
 def index():
     return 'Under construction...'
