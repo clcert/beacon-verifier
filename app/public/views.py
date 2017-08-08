@@ -81,4 +81,4 @@ def check_radio(record_id):
 
 @application.route('/verifier/')
 def index():
-    return 'Under construction...'
+    return 'Index of verifier under construction...'
