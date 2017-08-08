@@ -2,6 +2,7 @@ from app import application
 import urllib
 import json
 import binascii
+import requests
 from flask import jsonify
 
 
@@ -46,8 +47,17 @@ def check_earthquake_twitter(record_id):
 
 @application.route('/verifier/1.0/check_trending/id/<record_id>')
 def check_trending(record_id):
-    raw_data_from_record = urllib.request.urlopen(base_url + "/beacon/1.0/raw/id/" + record_id)
-    raw_data_json = json.loads(raw_data_from_record.read())
+    url = base_url + "/beacon/1.0/raw/id/" + record_id
+
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(max_retries=20)
+    session.mount('http://', adapter)
+    r = session.get(url)
+    #print(json.loads(r.content))
+    raw_data_json = json.loads(r.content)
+
+    #raw_data_from_record = urllib.request.urlopen(url)
+    #raw_data_json = json.loads(raw_data_from_record.read())
 
     trending_source_id = 3
     trending_object = {}
