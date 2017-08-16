@@ -1,3 +1,3 @@
 {
-  "beacon-server-url": "http://0.0.0.0:5000"
+  "beacon-server-url": "your-beacon-server-url"
 }
