@@ -3,6 +3,7 @@ import urllib
 import json
 import binascii
 from flask import jsonify
+from flask import render_template
 
 
 base_url = json.load(application.open_resource('config.json'))['beacon-server-url']
@@ -81,6 +82,6 @@ def check_radio(record_id):
     return raw_audio, {'Content-Type': 'audio/aacp'}
 
 
-@application.route('/verifier/')
+@application.route('/verifier')
 def index():
-    return 'Index of verifier under construction...'
+    return render_template('verifier.html')
