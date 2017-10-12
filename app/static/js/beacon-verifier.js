@@ -21,5 +21,26 @@ function verifySignature() {
 }
 
 function generateLinksForExternalValues() {
+    var record_id, external_json, base_url;
 
+    base_url = "http://localhost:5000";
+
+    // Get the record id that the user wants to get their external events
+    record_id = $('#record_id').val();
+
+    // Get external events
+    $.ajax({
+        // url: base_url + "/beacon/1.0/raw/id/" + record_id,
+        url: "http://172.17.69.98:5000/beacon/1.0/raw/id/89",
+        type: "GET",
+        data: {},
+        success: function (json) {
+            console.log(json);
+        },
+        error: function (xhr, status, errorThrown) {
+            alert("Value doesn't exist: " + xhr.status + " " + errorThrown + " " + status);
+        }
+    });
+
+    console.log(external_json);
 }
