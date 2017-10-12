@@ -10,13 +10,19 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 
-		<link rel="stylesheet" href="static/css/verifier.css" />
+		<!--<link rel="stylesheet" href="static/css/verifier.css" />-->
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/verifier.css') }}" />
 
-        <script src="static/js/jquery-3.2.1.min.js"></script>
-        <script src="static/js/beacon-verifier.js"></script>
-        <script src="static/js/sha3.js"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='js/jquery-3.2.1.min.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='js/beacon-verifier.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='js/sha3.js') }}"></script>
 
-		<noscript><link rel="stylesheet" href="static/css/noscript.css" /></noscript>
+        <!--<script src="static/js/jquery-3.2.1.min.js"></script>-->
+        <!--<script src="static/js/beacon-verifier.js"></script>-->
+        <!--<script src="static/js/sha3.js"></script>-->
+
+		<!--<noscript><link rel="stylesheet" href="static/css/noscript.css" /></noscript>-->
+        <noscript><link rel="stylesheet" href="{{ url_for('static', filename='css/noscript.css') }}" /></noscript>
 	</head>
 	<body class="is-loading">
 
@@ -27,7 +33,7 @@
 					<section id="main">
 						<header>
                             <a href="https://www.clcert.cl">
-                                <img src="static/images/clcert.png" alt="CLCERT logo" style="width: 25%; height: 25%;">
+                                <img src="{{ url_for('static', filename='images/clcert.png') }}" alt="CLCERT logo" style="width: 25%; height: 25%;">
                             </a>
                             <h1>Random Beacon Verifier</h1>
                             <h3>Verifiable &bull; Autonomous &bull; Consistent &bull; Unpredictable</h3>
