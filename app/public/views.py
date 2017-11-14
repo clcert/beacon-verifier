@@ -82,7 +82,7 @@ def check_radio(record_id):
     return raw_audio, {'Content-Type': 'audio/aacp'}
 
 
-@application.route('/verifier/')
+@application.route('/')
 def index():
     print("The URL for this page is {}".format(url_for("index")))
     return render_template('verifier.html')
