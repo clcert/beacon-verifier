@@ -30,11 +30,21 @@ def hash_value(value):
 
 
 def get_msg_to_sign(curr_pulse):
-    return curr_pulse["version"] + str(curr_pulse["frequency"]) + curr_pulse["certificateId"] + str(curr_pulse["time"]) + curr_pulse[
-        "localRandomValue"] + str(curr_pulse["external"]) \
+    return curr_pulse["version"] + str(curr_pulse["frequency"]) + curr_pulse["certificateId"] + str(
+        curr_pulse["time"]) + curr_pulse[
+               "localRandomValue"] + get_external_events_str(curr_pulse["external"]) \
            + curr_pulse["listValue"]["previous"] + curr_pulse["listValue"]["hour"] + curr_pulse["listValue"]["day"] \
            + curr_pulse["listValue"]["month"] + curr_pulse["listValue"]["year"] \
            + curr_pulse["preCommitmentValue"] + str(curr_pulse["status"])
+
+
+def get_external_events_str(external_list):
+    final_str = ''
+    for event in external_list:
+        final_str += event["sourceId"]
+        final_str += event["externalValue"]
+        final_str += str(event["statusCode"])
+    return final_str
 
 
 parser = OptionParser()
@@ -82,17 +92,14 @@ if options.all:
             pre_commitment = pulse["preCommitmentValue"]
 
         # CHECK SIGNATURE
-        # message_to_sign = get_msg_to_sign(pulse)
-        # if i is 1:
-        #     print(message_to_sign)
-        # try:
-        #     public_key.verify(pulse["signatureValue"].encode(),
-        #                       message_to_sign.encode(),
-        #                       padding.PSS(
-        #                           mgf=padding.MGF1(hashes.SHA256()),
-        #                           salt_length=padding.PSS.MAX_LENGTH
-        #                       ),
-        #                       hashes.SHA256()
-        #                       )
-        # except InvalidSignature:
-        #     print("Invalid Signature in pulse #" + str(i))
+        message_to_sign = get_msg_to_sign(pulse)
+        try:
+            public_key.verify(bytes.fromhex(pulse["signatureValue"]),
+                              message_to_sign.encode(),
+                              padding.PSS(
+                                  mgf=padding.MGF1(hashes.SHA256()),
+                                  salt_length=padding.PSS.MAX_LENGTH
+                              ),
+                              hashes.SHA256())
+        except InvalidSignature:
+            print("Invalid Signature in pulse #" + str(i))
