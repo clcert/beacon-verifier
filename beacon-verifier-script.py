@@ -20,10 +20,11 @@ from cryptography.exceptions import InvalidSignature
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
 CLCERT_BEACON_URL = "http://0.0.0.0:5000/"
-API_PREFIX = "beacon/1.0/pulse/"
+PULSE_PREFIX = "beacon/1.0/pulse/"
+RAW_PREFIX = "beacon/1.0/raw/"
 
 
-def get_pulse(url):
+def get_json(url):
     return json.loads(urllib.request.urlopen(url).read().decode())
 
 
@@ -72,6 +73,9 @@ parser.add_argument("-s", "--signature",
 parser.add_argument("-o", "--output-value",
                     action="store_true", dest="output_value", default=False,
                     help="check correct generation of output value")
+parser.add_argument("-e", "--external-values-hash",
+                    action="store_true", dest="ext_values_hash", default=False,
+                    help="check correct hashing of external events (last hour)")
 options = parser.parse_args()
 
 # CHECK FOR NO OPTIONS
@@ -83,10 +87,12 @@ print("Welcome to the CLCERT Random Beacon - Verification Software")
 
 # SET WHICH TESTS ARE GOING TO BE RUN
 if options.all:
+    # TODO: Automatically set all options to True
     options.chain = True
     options.pre_commitment = True
     options.signature = True
     options.output_value = True
+    options.ext_values_hash = True
 
 if options.chain:
     print("TESTING CHAINING OF OUTPUT VALUES")
@@ -100,8 +106,11 @@ if options.signature:
 if options.output_value:
     print("TESTING CORRECTNESS OF OUTPUT VALUES")
 
+if options.ext_values_hash:
+    print("TESTING CORRECT HASHING OF EXTERNAL VALUES (LAST HOUR)")
+
 # Obtain all the pulses from 1 to last
-last_index = get_pulse(CLCERT_BEACON_URL + API_PREFIX + "last")["id"]
+last_index = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
 
 # Get public certificate (for now)
 public_certificate = urllib.request.urlopen(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").read()
@@ -112,7 +121,7 @@ previous_value = "None"
 pre_commitment = "None"
 
 for i in range(1, last_index + 1):
-    pulse = get_pulse(CLCERT_BEACON_URL + API_PREFIX + "id/" + str(i))
+    pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
 
     if options.chain:
         # CHECK IMMEDIATELY PREVIOUS VALUES
@@ -159,3 +168,15 @@ for i in range(1, last_index + 1):
             print("OUTPUT VALUE NOT GENERATED CORRECTLY!")
             print("Value in pulse #" + str(i) + " should be " + correct_output_value)
             break
+
+    if options.ext_values_hash:
+        # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
+        if i > (last_index - 60) + 1:
+            raw_events = get_json(CLCERT_BEACON_URL + RAW_PREFIX + "id/" + str(i))
+            for event in raw_events:
+                source_id = event["source_id"]
+                for hashed_event in pulse["external"]:
+                    if hash_value(str(source_id)) == hashed_event["sourceId"]:
+                        if hash_value(event["raw_value"]) != hashed_event["externalValue"]:
+                            print("HASH OF EXTERNAL EVENT NOT STORED CORRECTLY!")
+                            print("Hash of source #" + str(source_id) + " not the same as value showed in pulse #" + str(i))
