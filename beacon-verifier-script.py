@@ -109,7 +109,8 @@ if options.output_value:
 if options.ext_values_hash:
     print("TESTING CORRECT HASHING OF EXTERNAL VALUES (LAST HOUR)")
 
-# Obtain all the pulses from 1 to last
+# Obtain all the pulses generated
+first_index = 1
 last_index = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
 
 # Get public certificate (for now)
@@ -120,7 +121,7 @@ public_key = cert.public_key()
 previous_value = "None"
 pre_commitment = "None"
 
-for i in range(1, last_index + 1):
+for i in range(first_index, last_index + 1):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
 
     if options.chain:
@@ -129,9 +130,8 @@ for i in range(1, last_index + 1):
             previous_value = pulse["outputValue"]
         else:
             if previous_value != pulse["listValue"]["previous"]:
-                print("NOT THE SAME VALUE!")
+                # print("NOT THE SAME VALUE!")
                 print("Previous value in pulse #" + str(i) + " not the same as output value in pulse #" + str(i - 1))
-                break
             previous_value = pulse["outputValue"]
 
     if options.pre_commitment:
@@ -141,15 +141,16 @@ for i in range(1, last_index + 1):
         else:
             commitment = hash_value(pulse["localRandomValue"])
             if commitment != pre_commitment:
-                print("NOT THE SAME COMMITMENT!")
+                # print("NOT THE SAME COMMITMENT!")
                 print(
                     "Value committed in pulse #" + str(i - 1) + " not the same as local value used in pulse #" + str(i))
-                break
             pre_commitment = pulse["preCommitmentValue"]
 
     if options.signature:
         # CHECK SIGNATURE
         message_to_sign = get_msg_to_sign(pulse)
+        if message_to_sign != pulse["message"]:
+            print("Message signed in pulse #" + str(i) + " changed!")
         try:
             public_key.verify(bytes.fromhex(pulse["signatureValue"]),
                               message_to_sign.encode(),
@@ -165,9 +166,8 @@ for i in range(1, last_index + 1):
         # CHECK CORRECT GENERATION OF OUTPUT VALUE
         correct_output_value = generate_output_value(pulse)
         if correct_output_value != pulse["outputValue"]:
-            print("OUTPUT VALUE NOT GENERATED CORRECTLY!")
-            print("Value in pulse #" + str(i) + " should be " + correct_output_value)
-            break
+            # print("OUTPUT VALUE NOT GENERATED CORRECTLY!")
+            print("Output value in pulse #" + str(i) + " should be " + correct_output_value)
 
     if options.ext_values_hash:
         # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
@@ -176,7 +176,7 @@ for i in range(1, last_index + 1):
             for event in raw_events:
                 source_id = event["source_id"]
                 for hashed_event in pulse["external"]:
-                    if hash_value(str(source_id)) == hashed_event["sourceId"]:
-                        if hash_value(event["raw_value"]) != hashed_event["externalValue"]:
-                            print("HASH OF EXTERNAL EVENT NOT STORED CORRECTLY!")
-                            print("Hash of source #" + str(source_id) + " not the same as value showed in pulse #" + str(i))
+                    if hash_value(str(source_id)) == hashed_event["sourceId"] and hash_value(event["raw_value"]) != \
+                            hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
+                        print("Hash of source #" + str(source_id) +
+                              " not the same as value showed in pulse #" + str(i))
