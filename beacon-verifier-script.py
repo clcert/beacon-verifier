@@ -12,6 +12,8 @@ import urllib.request, json, hashlib
 import argparse
 
 import sys
+
+import time
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -19,7 +21,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://0.0.0.0:5000/"
+CLCERT_BEACON_URL = "http://0.0.0.0/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
@@ -76,14 +78,39 @@ parser.add_argument("-o", "--output-value",
 parser.add_argument("-e", "--external-values-hash",
                     action="store_true", dest="ext_values_hash", default=False,
                     help="check correct hashing of external events (last hour)")
+parser.add_argument("-i", "--initial-pulse",
+                    action="store", dest="first_index", default=1, type=int,
+                    help="first pulse to check the chain")
+parser.add_argument("-f", "--final-pulse",
+                    action="store", dest="last_index", default=0, type=int,
+                    help="last pulse to check the chain")
 options = parser.parse_args()
 
 # CHECK FOR NO OPTIONS
-if not any(vars(options).values()):
+if not sum(vars(options).values()) > 1:
     parser.print_help()
     sys.exit()
 
 print("Welcome to the CLCERT Random Beacon - Verification Software")
+
+# SET LIMITS FOR CHAIN TO CHECK
+first_index = int(options.first_index)
+
+last_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
+
+if options.last_index == 0:
+    last_index = last_pulse
+else:
+    last_index = int(options.last_index)
+
+if last_index > last_pulse:
+    print("ERROR: LAST INDEX BIGGER THAN LAST PULSE CREATED!")
+    sys.exit()
+
+# CHECK THAT INITIAL AND LAST PULSE ARE CORRECT
+if last_index < first_index:
+    print("ERROR: FINAL PULSE MUST BE LOWER THAN INITIAL PULSE!")
+    sys.exit()
 
 # SET WHICH TESTS ARE GOING TO BE RUN
 if options.all:
@@ -109,17 +136,16 @@ if options.output_value:
 if options.ext_values_hash:
     print("TESTING CORRECT HASHING OF EXTERNAL VALUES (LAST HOUR)")
 
-# Obtain all the pulses generated
-first_index = 1
-last_index = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
+print("TESTING PULSES FROM #" + str(first_index) + " UNTIL #" + str(last_index))
 
 # Get public certificate (for now)
 public_certificate = urllib.request.urlopen(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").read()
 cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
-previous_value = "None"
-pre_commitment = "None"
+if first_index != 1:
+    previous_value = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))["outputValue"]
+    pre_commitment = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))["preCommitmentValue"]
 
 for i in range(first_index, last_index + 1):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
@@ -132,6 +158,8 @@ for i in range(first_index, last_index + 1):
             if previous_value != pulse["listValue"]["previous"]:
                 # print("NOT THE SAME VALUE!")
                 print("Previous value in pulse #" + str(i) + " not the same as output value in pulse #" + str(i - 1))
+                print(previous_value)
+                print(pulse["listValue"]["previous"])
             previous_value = pulse["outputValue"]
 
     if options.pre_commitment:
@@ -171,7 +199,7 @@ for i in range(first_index, last_index + 1):
 
     if options.ext_values_hash:
         # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
-        if i > (last_index - 60) + 1:
+        if i > (last_pulse - 60) + 1:
             raw_events = get_json(CLCERT_BEACON_URL + RAW_PREFIX + "id/" + str(i))
             for event in raw_events:
                 source_id = event["source_id"]
@@ -180,3 +208,6 @@ for i in range(first_index, last_index + 1):
                             hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
                         print("Hash of source #" + str(source_id) +
                               " not the same as value showed in pulse #" + str(i))
+
+    # Prevent 'Too Many Requests' response from server
+    time.sleep(0.05)
