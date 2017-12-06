@@ -14,6 +14,8 @@ import argparse
 import sys
 
 import time
+import datetime
+from dateutil import relativedelta
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -21,7 +23,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://0.0.0.0/"
+CLCERT_BEACON_URL = "http://0.0.0.0:5000/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
@@ -56,6 +58,53 @@ def generate_output_value(curr_pulse):
     data = get_msg_to_sign(curr_pulse)
     # TODO: This should be an slow hash function
     return hash_value(curr_pulse["signatureValue"] + data)
+
+
+def first_of_period(curr_pulse, period):
+    if curr_pulse["id"] == 1:
+        return "0" * 128
+    else:
+        curr_pulse_date = datetime.datetime.strptime(curr_pulse["timestamp"], "%a, %d %b %Y %H:%M:%S %Z").replace(
+                                                     tzinfo=datetime.timezone.utc)
+
+        if period == "hour":
+            start_of_current_period = curr_pulse_date.replace(minute=0, second=0, microsecond=0,
+                                                              tzinfo=datetime.timezone.utc)
+        elif period == "day":
+            start_of_current_period = curr_pulse_date.replace(hour= 0, minute=0, second=0, microsecond=0,
+                                                              tzinfo=datetime.timezone.utc)
+        elif period == "month":
+            start_of_current_period = curr_pulse_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0,
+                                                              tzinfo=datetime.timezone.utc)
+        elif period == "year":
+            start_of_current_period = curr_pulse_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0,
+                                                              tzinfo=datetime.timezone.utc)
+
+        # check that the date is after the first pulse generated (only if there are less than 60 pulses generated)
+        if curr_pulse["id"] <= 60:
+            first_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/1")
+            first_pulse_date = datetime.datetime.strptime(first_pulse["timestamp"],
+                                                          "%a, %d %b %Y %H:%M:%S %Z").replace(
+                                                          tzinfo=datetime.timezone.utc)
+            if start_of_current_period < first_pulse_date:
+                return first_pulse["outputValue"]
+
+        first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
+                                           str(int(start_of_current_period.timestamp())))
+
+        if start_of_current_period == curr_pulse_date:
+            if period == "hour":
+                start_of_current_period = start_of_current_period - datetime.timedelta(hours=1)
+            elif period == "day":
+                start_of_current_period = start_of_current_period - datetime.timedelta(days=1)
+            elif period == "month":
+                start_of_current_period = start_of_current_period - relativedelta.relativedelta(month=1)
+            elif period == "year":
+                start_of_current_period = start_of_current_period - relativedelta.relativedelta(years=1)
+            first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
+                                               str(int(start_of_current_period.timestamp())))
+
+        return first_of_current_period["outputValue"]
 
 
 # PARSE OPTIONS
@@ -103,13 +152,14 @@ if options.last_index == 0:
 else:
     last_index = int(options.last_index)
 
+# CHECK THAT LAST INDEX IS BEFORE THE LAST PULSE GENERATED
 if last_index > last_pulse:
-    print("ERROR: LAST INDEX BIGGER THAN LAST PULSE CREATED!")
+    print("ERROR: LAST INDEX BIGGER THAN LAST PULSE GENERATED!")
     sys.exit()
 
-# CHECK THAT INITIAL AND LAST PULSE ARE CORRECT
+# CHECK THAT INITIAL IS LOWER THAN LAST PULSE SOLICITED
 if last_index < first_index:
-    print("ERROR: FINAL PULSE MUST BE LOWER THAN INITIAL PULSE!")
+    print("ERROR: INITIAL PULSE MUST BE LOWER THAN FINAL PULSE!")
     sys.exit()
 
 # SET WHICH TESTS ARE GOING TO BE RUN
@@ -136,7 +186,7 @@ if options.output_value:
 if options.ext_values_hash:
     print("TESTING CORRECT HASHING OF EXTERNAL VALUES (LAST HOUR)")
 
-print("TESTING PULSES FROM #" + str(first_index) + " UNTIL #" + str(last_index))
+print("TESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
 public_certificate = urllib.request.urlopen(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").read()
@@ -144,8 +194,9 @@ cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
 if first_index != 1:
-    previous_value = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))["outputValue"]
-    pre_commitment = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))["preCommitmentValue"]
+    previous_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))
+    previous_value = previous_pulse["outputValue"]
+    pre_commitment = previous_pulse["preCommitmentValue"]
 
 for i in range(first_index, last_index + 1):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
@@ -153,14 +204,29 @@ for i in range(first_index, last_index + 1):
     if options.chain:
         # CHECK IMMEDIATELY PREVIOUS VALUES
         if i is 1:
-            previous_value = pulse["outputValue"]
+            previous_value = first_of_hour_value = first_of_day_value = first_of_month_value = first_of_year_value = \
+                pulse["outputValue"]
         else:
             if previous_value != pulse["listValue"]["previous"]:
-                # print("NOT THE SAME VALUE!")
                 print("Previous value in pulse #" + str(i) + " not the same as output value in pulse #" + str(i - 1))
-                print(previous_value)
-                print(pulse["listValue"]["previous"])
             previous_value = pulse["outputValue"]
+
+            first_of_hour_value = first_of_period(pulse, "hour")
+            first_of_day_value = first_of_period(pulse, "day")
+            first_of_month_value = first_of_period(pulse, "month")
+            first_of_year_value = first_of_period(pulse, "year")
+
+            if first_of_hour_value != pulse["listValue"]["hour"]:
+                print("Previous hour value in pulse #" + str(i) + " not correct")
+                print(first_of_hour_value)
+                print(pulse["listValue"]["hour"])
+                break
+            if first_of_day_value != pulse["listValue"]["day"]:
+                print("Previous day value in pulse #" + str(i) + " not correct")
+            if first_of_month_value != pulse["listValue"]["month"]:
+                print("Previous month value in pulse #" + str(i) + " not correct")
+            if first_of_year_value != pulse["listValue"]["year"]:
+                print("Previous year value in pulse #" + str(i) + " not correct")
 
     if options.pre_commitment:
         # CHECK PRE-COMMITMENTS
@@ -169,7 +235,6 @@ for i in range(first_index, last_index + 1):
         else:
             commitment = hash_value(pulse["localRandomValue"])
             if commitment != pre_commitment:
-                # print("NOT THE SAME COMMITMENT!")
                 print(
                     "Value committed in pulse #" + str(i - 1) + " not the same as local value used in pulse #" + str(i))
             pre_commitment = pulse["preCommitmentValue"]
@@ -194,7 +259,6 @@ for i in range(first_index, last_index + 1):
         # CHECK CORRECT GENERATION OF OUTPUT VALUE
         correct_output_value = generate_output_value(pulse)
         if correct_output_value != pulse["outputValue"]:
-            # print("OUTPUT VALUE NOT GENERATED CORRECTLY!")
             print("Output value in pulse #" + str(i) + " should be " + correct_output_value)
 
     if options.ext_values_hash:
