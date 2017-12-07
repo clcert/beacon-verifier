@@ -2,3 +2,4 @@ flask
 uwsgidecorators
 uwsgi
 cryptography
+requests

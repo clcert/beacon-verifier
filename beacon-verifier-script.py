@@ -1,20 +1,20 @@
 # Script that verifies the correctness of all the pulses generated
 # by the CLCERT Random Beacon.
 # In particular, this script verifies the correctness of the following properties on each pulse:
-# - Hash of external events
-# - Slow Hash function
-# - Pre-commitment on local random value
-# - Valid Signature
-# - Using of previous values (chaining)
-# - Hash of signature to produce final output
+# - Hash of external events (-e)
+# - Slow Hash function on signature to produce final output (-o)
+# - Pre-commitment on local random value (-p)
+# - Valid Signature (-s)
+# - Using of previous values a.k.a. chaining (-c)
+# - Limit which pulses are going to be verified (-i <initial> -f <final>)
 
-import urllib.request, json, hashlib
+import json
+import hashlib
 import argparse
-
 import sys
-
 import time
 import datetime
+import requests
 from dateutil import relativedelta
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -23,13 +23,14 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://0.0.0.0:5000/"
+CLCERT_BEACON_URL = "http://0.0.0.0/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
 
 def get_json(url):
-    return json.loads(urllib.request.urlopen(url).read().decode())
+    time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
+    return json.loads(requests.get(url).content)
 
 
 def hash_value(value):
@@ -67,6 +68,8 @@ def first_of_period(curr_pulse, period):
         curr_pulse_date = datetime.datetime.strptime(curr_pulse["timestamp"], "%a, %d %b %Y %H:%M:%S %Z").replace(
                                                      tzinfo=datetime.timezone.utc)
 
+        start_of_current_period = datetime.datetime.utcnow()
+
         if period == "hour":
             start_of_current_period = curr_pulse_date.replace(minute=0, second=0, microsecond=0,
                                                               tzinfo=datetime.timezone.utc)
@@ -80,15 +83,6 @@ def first_of_period(curr_pulse, period):
             start_of_current_period = curr_pulse_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0,
                                                               tzinfo=datetime.timezone.utc)
 
-        # check that the date is after the first pulse generated (only if there are less than 60 pulses generated)
-        if curr_pulse["id"] <= 60:
-            first_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/1")
-            first_pulse_date = datetime.datetime.strptime(first_pulse["timestamp"],
-                                                          "%a, %d %b %Y %H:%M:%S %Z").replace(
-                                                          tzinfo=datetime.timezone.utc)
-            if start_of_current_period < first_pulse_date:
-                return first_pulse["outputValue"]
-
         first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
                                            str(int(start_of_current_period.timestamp())))
 
@@ -101,6 +95,7 @@ def first_of_period(curr_pulse, period):
                 start_of_current_period = start_of_current_period - relativedelta.relativedelta(month=1)
             elif period == "year":
                 start_of_current_period = start_of_current_period - relativedelta.relativedelta(years=1)
+
             first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
                                                str(int(start_of_current_period.timestamp())))
 
@@ -189,7 +184,7 @@ if options.ext_values_hash:
 print("TESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
-public_certificate = urllib.request.urlopen(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").read()
+public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").content
 cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
@@ -218,9 +213,6 @@ for i in range(first_index, last_index + 1):
 
             if first_of_hour_value != pulse["listValue"]["hour"]:
                 print("Previous hour value in pulse #" + str(i) + " not correct")
-                print(first_of_hour_value)
-                print(pulse["listValue"]["hour"])
-                break
             if first_of_day_value != pulse["listValue"]["day"]:
                 print("Previous day value in pulse #" + str(i) + " not correct")
             if first_of_month_value != pulse["listValue"]["month"]:
@@ -272,6 +264,3 @@ for i in range(first_index, last_index + 1):
                             hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
                         print("Hash of source #" + str(source_id) +
                               " not the same as value showed in pulse #" + str(i))
-
-    # Prevent 'Too Many Requests' response from server
-    time.sleep(0.05)
