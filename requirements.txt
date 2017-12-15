@@ -3,3 +3,4 @@ uwsgidecorators
 uwsgi
 cryptography
 requests
+tqdm

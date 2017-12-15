@@ -21,9 +21,10 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
+from tqdm import tqdm
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://0.0.0.0/"
+CLCERT_BEACON_URL = "http://172.17.66.214/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
@@ -193,7 +194,7 @@ if first_index != 1:
     previous_value = previous_pulse["outputValue"]
     pre_commitment = previous_pulse["preCommitmentValue"]
 
-for i in range(first_index, last_index + 1):
+for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
 
     if options.chain:
