@@ -67,7 +67,7 @@ def first_of_period(curr_pulse, period):
         return "0" * 128
     else:
         curr_pulse_date = datetime.datetime.strptime(curr_pulse["timestamp"], "%a, %d %b %Y %H:%M:%S %Z").replace(
-                                                     tzinfo=datetime.timezone.utc)
+            tzinfo=datetime.timezone.utc)
 
         start_of_current_period = datetime.datetime.utcnow()
 
@@ -75,7 +75,7 @@ def first_of_period(curr_pulse, period):
             start_of_current_period = curr_pulse_date.replace(minute=0, second=0, microsecond=0,
                                                               tzinfo=datetime.timezone.utc)
         elif period == "day":
-            start_of_current_period = curr_pulse_date.replace(hour= 0, minute=0, second=0, microsecond=0,
+            start_of_current_period = curr_pulse_date.replace(hour=0, minute=0, second=0, microsecond=0,
                                                               tzinfo=datetime.timezone.utc)
         elif period == "month":
             start_of_current_period = curr_pulse_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0,
@@ -93,7 +93,7 @@ def first_of_period(curr_pulse, period):
             elif period == "day":
                 start_of_current_period = start_of_current_period - datetime.timedelta(days=1)
             elif period == "month":
-                start_of_current_period = start_of_current_period - relativedelta.relativedelta(month=1)
+                start_of_current_period = start_of_current_period - relativedelta.relativedelta(months=1)
             elif period == "year":
                 start_of_current_period = start_of_current_period - relativedelta.relativedelta(years=1)
 
@@ -136,7 +136,7 @@ if not sum(vars(options).values()) > 1:
     parser.print_help()
     sys.exit()
 
-print("Welcome to the CLCERT Random Beacon - Verification Software")
+print("CLCERT Random Beacon - Verification Script")
 
 # SET LIMITS FOR CHAIN TO CHECK
 first_index = int(options.first_index)
@@ -167,22 +167,24 @@ if options.all:
     options.output_value = True
     options.ext_values_hash = True
 
+print("\nTESTS TO BE EXECUTED:")
+
 if options.chain:
-    print("TESTING CHAINING OF OUTPUT VALUES")
+    print("- Chaining of Output Values")
 
 if options.pre_commitment:
-    print("TESTING PRE-COMMITMENTS VALUES")
+    print("- Pre-Commitments Values")
 
 if options.signature:
-    print("TESTING SIGNATURE VALUES")
+    print("- Signature Values")
 
 if options.output_value:
-    print("TESTING CORRECTNESS OF OUTPUT VALUES")
+    print("- Correctness of Output Values")
 
 if options.ext_values_hash:
-    print("TESTING CORRECT HASHING OF EXTERNAL VALUES (LAST HOUR)")
+    print("- Correct Hashing of External Events (Last Hour)")
 
-print("TESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
+print("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
 public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").content
@@ -194,7 +196,13 @@ if first_index != 1:
     previous_value = previous_pulse["outputValue"]
     pre_commitment = previous_pulse["preCommitmentValue"]
 
-for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
+chain_errors = {"previous": [], "hour": [], "day": [], "month": [], "year": []}
+pre_commitment_errors = []
+signature_errors = {"message": [], "signature": []}
+output_errors = []
+hash_errors = []
+
+for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
 
     if options.chain:
@@ -204,7 +212,7 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
                 pulse["outputValue"]
         else:
             if previous_value != pulse["listValue"]["previous"]:
-                print("Previous value in pulse #" + str(i) + " not the same as output value in pulse #" + str(i - 1))
+                chain_errors["previous"].append(i)
             previous_value = pulse["outputValue"]
 
             first_of_hour_value = first_of_period(pulse, "hour")
@@ -213,13 +221,15 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
             first_of_year_value = first_of_period(pulse, "year")
 
             if first_of_hour_value != pulse["listValue"]["hour"]:
-                print("Previous hour value in pulse #" + str(i) + " not correct")
+                chain_errors["hour"].append(i)
             if first_of_day_value != pulse["listValue"]["day"]:
-                print("Previous day value in pulse #" + str(i) + " not correct")
+                chain_errors["day"].append(i)
             if first_of_month_value != pulse["listValue"]["month"]:
-                print("Previous month value in pulse #" + str(i) + " not correct")
+                print("error in prev month in pulse " + str(i))
+                print("value should be: " + first_of_month_value)
+                chain_errors["month"].append(i)
             if first_of_year_value != pulse["listValue"]["year"]:
-                print("Previous year value in pulse #" + str(i) + " not correct")
+                chain_errors["year"].append(i)
 
     if options.pre_commitment:
         # CHECK PRE-COMMITMENTS
@@ -228,15 +238,14 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
         else:
             commitment = hash_value(pulse["localRandomValue"])
             if commitment != pre_commitment:
-                print(
-                    "Value committed in pulse #" + str(i - 1) + " not the same as local value used in pulse #" + str(i))
+                pre_commitment_errors.append(i)
             pre_commitment = pulse["preCommitmentValue"]
 
     if options.signature:
         # CHECK SIGNATURE
         message_to_sign = get_msg_to_sign(pulse)
         if message_to_sign != pulse["message"]:
-            print("Message signed in pulse #" + str(i) + " changed!")
+            signature_errors["message"].append(i)
         try:
             public_key.verify(bytes.fromhex(pulse["signatureValue"]),
                               message_to_sign.encode(),
@@ -246,13 +255,13 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
                               ),
                               hashes.SHA256())
         except InvalidSignature:
-            print("Invalid Signature in pulse #" + str(i))
+            signature_errors["signature"].append(i)
 
     if options.output_value:
         # CHECK CORRECT GENERATION OF OUTPUT VALUE
         correct_output_value = generate_output_value(pulse)
         if correct_output_value != pulse["outputValue"]:
-            print("Output value in pulse #" + str(i) + " should be " + correct_output_value)
+            output_errors.append(i)
 
     if options.ext_values_hash:
         # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
@@ -263,5 +272,22 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulse'):
                 for hashed_event in pulse["external"]:
                     if hash_value(str(source_id)) == hashed_event["sourceId"] and hash_value(event["raw_value"]) != \
                             hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
-                        print("Hash of source #" + str(source_id) +
-                              " not the same as value showed in pulse #" + str(i))
+                        hash_errors.append(i)
+
+# PRINT FINAL REPORT
+print("\nFINAL REPORT:")
+if not any(chain_errors.values()) and not pre_commitment_errors and not any(signature_errors.values()) and \
+        not output_errors and not hash_errors:
+    print("All pulses are correct!")
+else:
+    if any(chain_errors.values()):
+        print("CHAIN ERRORS")
+    if pre_commitment_errors:
+        print("PRE-COMMITMENT ERRORS")
+    if any(signature_errors.values()):
+        print("SIGNATURE ERRORS")
+    if output_errors:
+        print("OUTPUT VALUES ERRORS")
+    if hash_errors:
+        print("HASH OF EXTERNAL EVENTS ERRORS")
+print("")
