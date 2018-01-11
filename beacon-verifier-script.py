@@ -23,10 +23,16 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from tqdm import tqdm
 
+from app.data.sloth import SlothUnicornGenerator
+
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
 CLCERT_BEACON_URL = "http://172.17.66.214/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
+
+max_message = '0' * 2450
+sloth = SlothUnicornGenerator(max_message, 1)
+prime_p = sloth.generate_prime_p(sloth.generate_sloth_input())
 
 
 def get_json(url):
@@ -58,8 +64,13 @@ def get_external_events_str(external_list):
 
 def generate_output_value(curr_pulse):
     data = get_msg_to_sign(curr_pulse)
-    # TODO: This should be an slow hash function
-    return hash_value(curr_pulse["signatureValue"] + data)
+
+    # TODO: Verify value instead of generate the hash once more
+    sloth_obj = SlothUnicornGenerator(curr_pulse["signatureValue"] + data, 180)
+    sloth_obj.generate(prime_p=prime_p)
+    return sloth_obj.get_sloth_hash()
+
+    # return hash_value(curr_pulse["signatureValue"] + data)
 
 
 def first_of_period(curr_pulse, period):
@@ -205,6 +216,9 @@ hash_errors = []
 for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
     pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
 
+    if pulse["status"] != 0:
+        continue
+
     if options.chain:
         # CHECK IMMEDIATELY PREVIOUS VALUES
         if i is 1:
@@ -237,8 +251,10 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
             pre_commitment = pulse["preCommitmentValue"]
         else:
             commitment = hash_value(pulse["localRandomValue"])
-            if commitment != pre_commitment:
+            if pulse["localRandomValue"] != ('0' * 128) and commitment != pre_commitment:
                 pre_commitment_errors.append(i)
+                print(commitment)
+                print(pre_commitment)
             pre_commitment = pulse["preCommitmentValue"]
 
     if options.signature:
@@ -282,12 +298,17 @@ if not any(chain_errors.values()) and not pre_commitment_errors and not any(sign
 else:
     if any(chain_errors.values()):
         print("CHAIN ERRORS")
+        print(str(chain_errors) + '\n')
     if pre_commitment_errors:
         print("PRE-COMMITMENT ERRORS")
+        print(str(pre_commitment_errors) + '\n')
     if any(signature_errors.values()):
         print("SIGNATURE ERRORS")
+        print(str(signature_errors) + '\n')
     if output_errors:
         print("OUTPUT VALUES ERRORS")
+        print(str(output_errors) + '\n')
     if hash_errors:
         print("HASH OF EXTERNAL EVENTS ERRORS")
+        print(str(hash_errors))
 print("")
