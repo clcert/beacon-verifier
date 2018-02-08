@@ -84,5 +84,4 @@ def check_radio(record_id):
 
 @application.route('/verifier')
 def index():
-    print("The URL for this page is {}".format(url_for("index")))
     return render_template('verifier.html')

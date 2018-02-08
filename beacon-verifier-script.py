@@ -26,13 +26,15 @@ from tqdm import tqdm
 from app.data.sloth import SlothUnicornGenerator
 
 # CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://172.17.66.214/"
+CLCERT_BEACON_URL = "http://localhost:5000/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
 max_message = '0' * 2450
 sloth = SlothUnicornGenerator(max_message, 1)
+print("Generating prime for Sloth verification...")
 prime_p = sloth.generate_prime_p(sloth.generate_sloth_input())
+print("Prime Generated!\n")
 
 
 def get_json(url):
@@ -44,13 +46,14 @@ def hash_value(value):
     return hashlib.sha3_512(value.encode('utf-8')).digest().hex()
 
 
-def get_msg_to_sign(curr_pulse):
-    return curr_pulse["version"] + str(curr_pulse["frequency"]) + curr_pulse["certificateId"] + str(
+def get_hashed_msg_to_sign(curr_pulse):
+    message = curr_pulse["version"] + str(curr_pulse["frequency"]) + curr_pulse["certificateId"] + str(
         curr_pulse["time"]) + curr_pulse[
                "localRandomValue"] + get_external_events_str(curr_pulse["external"]) \
            + curr_pulse["listValue"]["previous"] + curr_pulse["listValue"]["hour"] + curr_pulse["listValue"]["day"] \
            + curr_pulse["listValue"]["month"] + curr_pulse["listValue"]["year"] \
            + curr_pulse["preCommitmentValue"] + str(curr_pulse["status"])
+    return hash_value(message)
 
 
 def get_external_events_str(external_list):
@@ -62,15 +65,11 @@ def get_external_events_str(external_list):
     return final_str
 
 
-def generate_output_value(curr_pulse):
-    data = get_msg_to_sign(curr_pulse)
+def verify_output_value(curr_pulse):
+    data = get_hashed_msg_to_sign(curr_pulse)
 
-    # TODO: Verify value instead of generate the hash once more
     sloth_obj = SlothUnicornGenerator(curr_pulse["signatureValue"] + data, 180)
-    sloth_obj.generate(prime_p=prime_p)
-    return sloth_obj.get_sloth_hash()
-
-    # return hash_value(curr_pulse["signatureValue"] + data)
+    return sloth_obj.verify(hash_value(curr_pulse["signatureValue"] + data), curr_pulse["outputValue"], curr_pulse["witness"], prime_p=prime_p)
 
 
 def first_of_period(curr_pulse, period):
@@ -259,8 +258,8 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
 
     if options.signature:
         # CHECK SIGNATURE
-        message_to_sign = get_msg_to_sign(pulse)
-        if message_to_sign != pulse["message"]:
+        message_to_sign = get_hashed_msg_to_sign(pulse)
+        if message_to_sign != pulse["hashed_message"]:
             signature_errors["message"].append(i)
         try:
             public_key.verify(bytes.fromhex(pulse["signatureValue"]),
@@ -275,8 +274,7 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
 
     if options.output_value:
         # CHECK CORRECT GENERATION OF OUTPUT VALUE
-        correct_output_value = generate_output_value(pulse)
-        if correct_output_value != pulse["outputValue"]:
+        if verify_output_value(pulse):
             output_errors.append(i)
 
     if options.ext_values_hash:
