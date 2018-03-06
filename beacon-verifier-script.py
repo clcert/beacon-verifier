@@ -7,12 +7,12 @@
 # - Valid Signature (-s)
 # - Using of previous values a.k.a. chaining (-c)
 # - Limit which pulses are going to be verified (-i <initial> -f <final>)
+# - Set the address of the beacon web server (-w <beacon-web-address>)
 
 import json
 import hashlib
 import argparse
 import sys
-import time
 import datetime
 import requests
 from dateutil import relativedelta
@@ -22,38 +22,50 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from tqdm import tqdm
+from requests.exceptions import ConnectionError
+from json.decoder import JSONDecodeError
 
-from app.data.sloth import SlothUnicornGenerator
+from sloth import SlothUnicornGenerator
 
-# CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
-CLCERT_BEACON_URL = "http://localhost:5000/"
+CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
 
-max_message = '0' * 2450
-sloth = SlothUnicornGenerator(max_message, 1)
-print("Generating prime for Sloth verification...")
-prime_p = sloth.generate_prime_p(sloth.generate_sloth_input())
-print("Prime Generated!\n")
+
+class BeaconServerError(Exception):
+    def __init__(self):
+        pass
+
+
+class BeaconPulseError(Exception):
+    def __init__(self):
+        pass
 
 
 def get_json(url):
-    time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
-    return json.loads(requests.get(url).content)
+    # time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
+    try:
+        return json.loads(requests.get(url).content)
+    except ConnectionError:
+        raise BeaconServerError
+        # return 'server error'
+    except JSONDecodeError:
+        raise BeaconPulseError
+        # return 'pulse error'
 
 
 def hash_value(value):
     return hashlib.sha3_512(value.encode('utf-8')).digest().hex()
 
 
-def get_hashed_msg_to_sign(curr_pulse):
+def get_msg_to_sign(curr_pulse):
     message = curr_pulse["version"] + str(curr_pulse["frequency"]) + curr_pulse["certificateId"] + str(
         curr_pulse["time"]) + curr_pulse[
                "localRandomValue"] + get_external_events_str(curr_pulse["external"]) \
            + curr_pulse["listValue"]["previous"] + curr_pulse["listValue"]["hour"] + curr_pulse["listValue"]["day"] \
            + curr_pulse["listValue"]["month"] + curr_pulse["listValue"]["year"] \
            + curr_pulse["preCommitmentValue"] + str(curr_pulse["status"])
-    return hash_value(message)
+    return message
 
 
 def get_external_events_str(external_list):
@@ -66,7 +78,7 @@ def get_external_events_str(external_list):
 
 
 def verify_output_value(curr_pulse):
-    data = get_hashed_msg_to_sign(curr_pulse)
+    data = get_msg_to_sign(curr_pulse)
 
     sloth_obj = SlothUnicornGenerator(curr_pulse["signatureValue"] + data, 180)
     return sloth_obj.verify(hash_value(curr_pulse["signatureValue"] + data), curr_pulse["outputValue"], curr_pulse["witness"], prime_p=prime_p)
@@ -94,8 +106,11 @@ def first_of_period(curr_pulse, period):
             start_of_current_period = curr_pulse_date.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0,
                                                               tzinfo=datetime.timezone.utc)
 
-        first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
-                                           str(int(start_of_current_period.timestamp())))
+        try:
+            first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
+                                               str(int(start_of_current_period.timestamp())))
+        except (BeaconServerError, BeaconPulseError) as e:
+            raise e
 
         if start_of_current_period == curr_pulse_date:
             if period == "hour":
@@ -107,8 +122,11 @@ def first_of_period(curr_pulse, period):
             elif period == "year":
                 start_of_current_period = start_of_current_period - relativedelta.relativedelta(years=1)
 
-            first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
-                                               str(int(start_of_current_period.timestamp())))
+            try:
+                first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
+                                                   str(int(start_of_current_period.timestamp())))
+            except (BeaconServerError, BeaconPulseError) as e:
+                raise e
 
         return first_of_current_period["outputValue"]
 
@@ -139,27 +157,38 @@ parser.add_argument("-i", "--initial-pulse",
 parser.add_argument("-f", "--final-pulse",
                     action="store", dest="last_index", default=0, type=int,
                     help="last pulse to check the chain")
+parser.add_argument("-w", "--beacon-web",
+                    action="store", dest="beacon_web", default="", type=str,
+                    help="beacon server web host")
 options = parser.parse_args()
 
 # CHECK FOR NO OPTIONS
-if not sum(vars(options).values()) > 1:
-    parser.print_help()
-    sys.exit()
+# if not sum(vars(options).values()) > 1:
+#     parser.print_help()
+#     sys.exit()
 
 print("CLCERT Random Beacon - Verification Script")
 
 # SET LIMITS FOR CHAIN TO CHECK
 first_index = int(options.first_index)
 
-last_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
+# CHECK BEACON HOST OPTION
+if options.beacon_web != "":
+    CLCERT_BEACON_URL = options.beacon_web
+
+try:
+    last_pulse_id = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
+except (BeaconServerError, BeaconPulseError):
+    print("BEACON SERVER IS DOWN")
+    sys.exit()
 
 if options.last_index == 0:
-    last_index = last_pulse
+    last_index = last_pulse_id
 else:
     last_index = int(options.last_index)
 
 # CHECK THAT LAST INDEX IS BEFORE THE LAST PULSE GENERATED
-if last_index > last_pulse:
+if last_index > last_pulse_id:
     print("ERROR: LAST INDEX BIGGER THAN LAST PULSE GENERATED!")
     sys.exit()
 
@@ -176,6 +205,14 @@ if options.all:
     options.signature = True
     options.output_value = True
     options.ext_values_hash = True
+
+# Generate prime only if output value needs to be tested
+if options.output_value:
+    max_message = '0' * 2195
+    sloth = SlothUnicornGenerator(max_message, 1)
+    print("Generating prime for Sloth verification...")
+    prime_p = sloth.generate_prime_p(sloth.generate_sloth_input())
+    print("Prime Generated!")
 
 print("\nTESTS TO BE EXECUTED:")
 
@@ -202,7 +239,11 @@ cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
 if first_index != 1:
-    previous_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))
+    try:
+        previous_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))
+    except (BeaconServerError, BeaconPulseError):
+        print("BEACON SERVER IS DOWN")
+        sys.exit()
     previous_value = previous_pulse["outputValue"]
     pre_commitment = previous_pulse["preCommitmentValue"]
 
@@ -213,13 +254,17 @@ output_errors = []
 hash_errors = []
 
 for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
-    pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
+    try:
+        pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
+    except (BeaconServerError, BeaconPulseError):
+        print("\nBEACON SERVER IS DOWN")
+        print("LAST RECORD ANALYZED #" + str(i-1))
+        break
 
-    if pulse["status"] != 0:
-        continue
-
+    # CHECK PREVIOUS VALUES (CONSISTENCY OF THE CHAIN)
     if options.chain:
-        # CHECK IMMEDIATELY PREVIOUS VALUES
+
+        # The first record doesn't need to check previous values
         if i is 1:
             previous_value = first_of_hour_value = first_of_day_value = first_of_month_value = first_of_year_value = \
                 pulse["outputValue"]
@@ -228,65 +273,86 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
                 chain_errors["previous"].append(i)
             previous_value = pulse["outputValue"]
 
-            first_of_hour_value = first_of_period(pulse, "hour")
-            first_of_day_value = first_of_period(pulse, "day")
-            first_of_month_value = first_of_period(pulse, "month")
-            first_of_year_value = first_of_period(pulse, "year")
+            try:
+                first_of_hour_value = first_of_period(pulse, "hour")
+                first_of_day_value = first_of_period(pulse, "day")
+                first_of_month_value = first_of_period(pulse, "month")
+                first_of_year_value = first_of_period(pulse, "year")
+            except (BeaconServerError, BeaconPulseError):
+                print("\nBEACON SERVER IS DOWN")
+                print("LAST RECORD ANALYZED #" + str(i - 1))
+                break
 
             if first_of_hour_value != pulse["listValue"]["hour"]:
                 chain_errors["hour"].append(i)
             if first_of_day_value != pulse["listValue"]["day"]:
                 chain_errors["day"].append(i)
             if first_of_month_value != pulse["listValue"]["month"]:
-                print("error in prev month in pulse " + str(i))
-                print("value should be: " + first_of_month_value)
                 chain_errors["month"].append(i)
             if first_of_year_value != pulse["listValue"]["year"]:
                 chain_errors["year"].append(i)
 
+    # CHECK PRE-COMMITMENTS
     if options.pre_commitment:
-        # CHECK PRE-COMMITMENTS
+
+        # The first record doesn't use a local random value
         if i is 1:
             pre_commitment = pulse["preCommitmentValue"]
         else:
-            commitment = hash_value(pulse["localRandomValue"])
-            if pulse["localRandomValue"] != ('0' * 128) and commitment != pre_commitment:
-                pre_commitment_errors.append(i)
-                print(commitment)
-                print(pre_commitment)
-            pre_commitment = pulse["preCommitmentValue"]
+            if pulse["status"] == 102 or pulse["status"] == 103:
+                pre_commitment = pulse["preCommitmentValue"]
+            else:
+                commitment = hash_value(pulse["localRandomValue"])
+                if pulse["localRandomValue"] != ('0' * 128) and commitment != pre_commitment:
+                    pre_commitment_errors.append(i)
+                pre_commitment = pulse["preCommitmentValue"]
 
+    # CHECK SIGNATURE
     if options.signature:
-        # CHECK SIGNATURE
-        message_to_sign = get_hashed_msg_to_sign(pulse)
-        if message_to_sign != pulse["hashed_message"]:
-            signature_errors["message"].append(i)
-        try:
-            public_key.verify(bytes.fromhex(pulse["signatureValue"]),
-                              message_to_sign.encode(),
-                              padding.PSS(
-                                  mgf=padding.MGF1(hashes.SHA256()),
-                                  salt_length=padding.PSS.MAX_LENGTH
-                              ),
-                              hashes.SHA256())
-        except InvalidSignature:
-            signature_errors["signature"].append(i)
 
+        # Only check signatures of normal records (status != 102 or 103)
+        if pulse["status"] != 102 and pulse["status"] != 103:
+            message_to_sign = get_msg_to_sign(pulse)
+            if hash_value(message_to_sign) != pulse["hashedMessage"]:
+                signature_errors["message"].append(i)
+            try:
+                public_key.verify(bytes.fromhex(pulse["signatureValue"]),
+                                  message_to_sign.encode(),
+                                  padding.PSS(
+                                      mgf=padding.MGF1(hashes.SHA256()),
+                                      salt_length=padding.PSS.MAX_LENGTH
+                                  ),
+                                  hashes.SHA256())
+            except InvalidSignature:
+                signature_errors["signature"].append(i)
+
+    # CHECK CORRECT GENERATION OF OUTPUT VALUE
     if options.output_value:
-        # CHECK CORRECT GENERATION OF OUTPUT VALUE
-        if verify_output_value(pulse):
-            output_errors.append(i)
 
+        # Only check output value of normal records (status != 102 or 103)
+        if pulse["status"] != 102 and pulse["status"] != 103:
+            if verify_output_value(pulse):
+                output_errors.append(i)
+
+    # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
     if options.ext_values_hash:
-        # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR
-        if i > (last_pulse - 60) + 1:
-            raw_events = get_json(CLCERT_BEACON_URL + RAW_PREFIX + "id/" + str(i))
-            for event in raw_events:
-                source_id = event["source_id"]
-                for hashed_event in pulse["external"]:
-                    if hash_value(str(source_id)) == hashed_event["sourceId"] and hash_value(event["raw_value"]) != \
-                            hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
-                        hash_errors.append(i)
+
+        # Only check last 60 records
+        if i > (last_pulse_id - 60) + 1:
+            # Only check records not missing
+            if pulse["status"] != 103:
+                try:
+                    raw_events = get_json(CLCERT_BEACON_URL + RAW_PREFIX + "id/" + str(i))
+                except (BeaconServerError, BeaconPulseError):
+                    print("\nBEACON SERVER IS DOWN")
+                    print("LAST RECORD ANALYZED #" + str(i - 1))
+                    break
+                for event in raw_events:
+                    source_id = event["source_id"]
+                    for hashed_event in pulse["external"]:
+                        if hash_value(str(source_id)) == hashed_event["sourceId"] and hash_value(event["raw_value"]) != \
+                                hashed_event["externalValue"] and not event["raw_value"] == "DELETED":
+                            hash_errors.append(i)
 
 # PRINT FINAL REPORT
 print("\nFINAL REPORT:")
