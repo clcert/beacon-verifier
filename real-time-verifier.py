@@ -7,10 +7,16 @@ import time
 import requests
 import binascii
 import json
+import argparse
 from requests.exceptions import ConnectionError
 from json.decoder import JSONDecodeError
 from bs4 import BeautifulSoup
 import threading
+
+
+CLCERT_BEACON_URL = "http://www/"
+PULSE_PREFIX = "beacon/1.0/pulse/"
+RAW_PREFIX = "beacon/1.0/raw/"
 
 
 class BeaconServerError(Exception):
@@ -135,10 +141,18 @@ def get_json(url):
         raise BeaconPulseError
 
 
-CLCERT_BEACON_URL = "http://www/"
-PULSE_PREFIX = "beacon/1.0/pulse/"
-RAW_PREFIX = "beacon/1.0/raw/"
+# PARSE OPTIONS
+parser = argparse.ArgumentParser(description="Real-Time Script for External Events collected by CLCERT Random Beacon")
+parser.add_argument("-w", "--beacon-web",
+                    action="store", dest="beacon_web", default="", type=str,
+                    help="beacon server web host")
+options = parser.parse_args()
 
+print("CLCERT Random Beacon - Real-Time Verifier")
+
+# CHECK BEACON HOST OPTION
+if options.beacon_web != "":
+    CLCERT_BEACON_URL = options.beacon_web
 
 # Wait for the current minute to end
 second_mark_init = 0

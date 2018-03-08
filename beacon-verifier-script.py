@@ -167,7 +167,7 @@ options = parser.parse_args()
 #     parser.print_help()
 #     sys.exit()
 
-print("CLCERT Random Beacon - Verification Script")
+print("CLCERT Random Beacon - Chain Verifier")
 
 # SET LIMITS FOR CHAIN TO CHECK
 first_index = int(options.first_index)
