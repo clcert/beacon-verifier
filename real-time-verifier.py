@@ -17,6 +17,7 @@ import threading
 CLCERT_BEACON_URL = "http://www/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
+requests.packages.urllib3.disable_warnings()  # Disable warning for self signed certificate
 
 
 class BeaconServerError(Exception):
@@ -134,7 +135,7 @@ class EarthquakeWeb(SourceCollector):
 def get_json(url):
     time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
     try:
-        return json.loads(requests.get(url).content)
+        return json.loads(requests.get(url, verify=False).content)  # TODO: change for not self signed certificate
     except ConnectionError:
         raise BeaconServerError
     except JSONDecodeError:

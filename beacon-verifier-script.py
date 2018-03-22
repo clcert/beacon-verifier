@@ -30,6 +30,7 @@ from sloth import SlothUnicornGenerator
 CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
+requests.packages.urllib3.disable_warnings()  # Disable warning for self signed certificate
 
 
 class BeaconServerError(Exception):
@@ -45,7 +46,7 @@ class BeaconPulseError(Exception):
 def get_json(url):
     # time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
     try:
-        return json.loads(requests.get(url).content)
+        return json.loads(requests.get(url, verify=False).content)  # TODO: change for not self signed certificate
     except ConnectionError:
         raise BeaconServerError
         # return 'server error'
@@ -234,7 +235,7 @@ if options.ext_values_hash:
 print("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
-public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").content
+public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1", verify=False).content  # TODO: change for not self signed certificate
 cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
@@ -315,16 +316,17 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
             message_to_sign = get_msg_to_sign(pulse)
             if hash_value(message_to_sign) != pulse["hashedMessage"]:
                 signature_errors["message"].append(i)
-            try:
-                public_key.verify(bytes.fromhex(pulse["signatureValue"]),
-                                  message_to_sign.encode(),
-                                  padding.PSS(
-                                      mgf=padding.MGF1(hashes.SHA256()),
-                                      salt_length=padding.PSS.MAX_LENGTH
-                                  ),
-                                  hashes.SHA256())
-            except InvalidSignature:
-                signature_errors["signature"].append(i)
+            else:
+                try:
+                    public_key.verify(bytes.fromhex(pulse["signatureValue"]),
+                                      message_to_sign.encode(),
+                                      padding.PSS(
+                                          mgf=padding.MGF1(hashes.SHA256()),
+                                          salt_length=padding.PSS.MAX_LENGTH
+                                      ),
+                                      hashes.SHA256())
+                except InvalidSignature:
+                    signature_errors["signature"].append(i)
 
     # CHECK CORRECT GENERATION OF OUTPUT VALUE
     if options.output_value:
@@ -358,7 +360,7 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
 print("\nFINAL REPORT:")
 if not any(chain_errors.values()) and not pre_commitment_errors and not any(signature_errors.values()) and \
         not output_errors and not hash_errors:
-    print("All pulses are correct!")
+    print("All pulses analyzed were correct!")
 else:
     if any(chain_errors.values()):
         print("CHAIN ERRORS")
