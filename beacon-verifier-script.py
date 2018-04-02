@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from tqdm import tqdm
+import time
 from requests.exceptions import ConnectionError
 from json.decoder import JSONDecodeError
 
@@ -45,14 +46,27 @@ class BeaconPulseError(Exception):
 
 def get_json(url):
     # time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
+
     try:
-        return json.loads(requests.get(url, verify=False).content)  # TODO: change for not self signed certificate
+        req = requests.get(url, verify=False)  # TODO: change for not self signed certificate
     except ConnectionError:
         raise BeaconServerError
-        # return 'server error'
-    except JSONDecodeError:
+
+    req_code = req.status_code
+
+    if req_code is 200:  # success
+        return json.loads(req.content)
+
+    if req_code is 500:  # retry if a 500 response is returned
+        return get_json(url)
+
+    if req_code is 502:  # upstream server is down
+        raise BeaconServerError
+
+    if req_code is 404:  # record not found
         raise BeaconPulseError
-        # return 'pulse error'
+
+
 
 
 def hash_value(value):
