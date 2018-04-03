@@ -44,8 +44,11 @@ class BeaconPulseError(Exception):
         pass
 
 
-def get_json(url):
+def get_json(url, retry=0):
     # time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
+
+    if retry == 5:
+        raise BeaconServerError
 
     try:
         req = requests.get(url, verify=False)  # TODO: change for not self signed certificate
@@ -54,19 +57,17 @@ def get_json(url):
 
     req_code = req.status_code
 
-    if req_code is 200:  # success
+    if req_code == 200:  # success
         return json.loads(req.content)
 
-    if req_code is 500:  # retry if a 500 response is returned
-        return get_json(url)
+    if req_code == 500 and retry < 5:  # retry if a 500 response is returned (up to 5 times)
+        return get_json(url, retry=retry + 1)
 
-    if req_code is 502:  # upstream server is down
+    if req_code == 502:  # upstream server is down
         raise BeaconServerError
 
-    if req_code is 404:  # record not found
+    if req_code == 404:  # record not found
         raise BeaconPulseError
-
-
 
 
 def hash_value(value):
@@ -175,6 +176,9 @@ parser.add_argument("-f", "--final-pulse",
 parser.add_argument("-w", "--beacon-web",
                     action="store", dest="beacon_web", default="", type=str,
                     help="beacon server web host")
+parser.add_argument("-v", "--verbose",
+                    action="store_true", dest="verbose", default=False,
+                    help="verbose mode")
 options = parser.parse_args()
 
 # CHECK FOR NO OPTIONS
@@ -182,7 +186,9 @@ options = parser.parse_args()
 #     parser.print_help()
 #     sys.exit()
 
-print("CLCERT Random Beacon - Chain Verifier")
+vprint = print if options.verbose else lambda *a, **k: None
+
+vprint("CLCERT Random Beacon - Chain Verifier")
 
 # SET LIMITS FOR CHAIN TO CHECK
 first_index = int(options.first_index)
@@ -192,10 +198,12 @@ if options.beacon_web != "":
     CLCERT_BEACON_URL = options.beacon_web
 
 try:
-    last_pulse_id = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")["id"]
+    lp = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")
 except (BeaconServerError, BeaconPulseError):
-    print("BEACON SERVER IS DOWN")
+    vprint("BEACON SERVER IS DOWN")
     sys.exit()
+
+last_pulse_id = lp["id"]
 
 if options.last_index == 0:
     last_index = last_pulse_id
@@ -204,12 +212,12 @@ else:
 
 # CHECK THAT LAST INDEX IS BEFORE THE LAST PULSE GENERATED
 if last_index > last_pulse_id:
-    print("ERROR: LAST INDEX BIGGER THAN LAST PULSE GENERATED!")
+    vprint("ERROR: LAST INDEX BIGGER THAN LAST PULSE GENERATED!")
     sys.exit()
 
 # CHECK THAT INITIAL IS LOWER THAN LAST PULSE SOLICITED
 if last_index < first_index:
-    print("ERROR: INITIAL PULSE MUST BE LOWER THAN FINAL PULSE!")
+    vprint("ERROR: INITIAL PULSE MUST BE LOWER THAN FINAL PULSE!")
     sys.exit()
 
 # SET WHICH TESTS ARE GOING TO BE RUN
@@ -225,31 +233,36 @@ if options.all:
 if options.output_value:
     max_message = '0' * 2195
     sloth = SlothUnicornGenerator(max_message, 1)
-    print("Generating prime for Sloth verification...")
+    vprint("Generating prime for Sloth verification...")
     prime_p = sloth.generate_prime_p(sloth.generate_sloth_input())
-    print("Prime Generated!")
+    vprint("Prime Generated!")
 
-print("\nTESTS TO BE EXECUTED:")
+vprint("\nTESTS TO BE EXECUTED:")
 
 if options.chain:
-    print("- Chaining of Output Values")
+    vprint("- Chaining of Output Values")
 
 if options.pre_commitment:
-    print("- Pre-Commitments Values")
+    vprint("- Pre-Commitments Values")
 
 if options.signature:
-    print("- Signature Values")
+    vprint("- Signature Values")
 
 if options.output_value:
-    print("- Correctness of Output Values")
+    vprint("- Correctness of Output Values")
 
 if options.ext_values_hash:
-    print("- Correct Hashing of External Events (Last Hour)")
+    vprint("- Correct Hashing of External Events (Last Hour)")
 
-print("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
+vprint("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
-public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1", verify=False).content  # TODO: change for not self signed certificate
+try:
+    public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1", verify=False).content  # TODO: change for not self signed certificate
+except ConnectionError:
+    vprint("BEACON SERVER IS DOWN")
+    sys.exit()
+
 cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
 public_key = cert.public_key()
 
@@ -257,7 +270,7 @@ if first_index != 1:
     try:
         previous_pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(first_index - 1))
     except (BeaconServerError, BeaconPulseError):
-        print("BEACON SERVER IS DOWN")
+        vprint("BEACON SERVER IS DOWN")
         sys.exit()
     previous_value = previous_pulse["outputValue"]
     pre_commitment = previous_pulse["preCommitmentValue"]
@@ -268,12 +281,12 @@ signature_errors = {"message": [], "signature": []}
 output_errors = []
 hash_errors = []
 
-for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
+for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not options.verbose):
     try:
         pulse = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "id/" + str(i))
     except (BeaconServerError, BeaconPulseError):
-        print("\nBEACON SERVER IS DOWN")
-        print("LAST RECORD ANALYZED #" + str(i-1))
+        vprint("\nBEACON SERVER IS DOWN")
+        vprint("LAST RECORD ANALYZED #" + str(i-1))
         break
 
     # CHECK PREVIOUS VALUES (CONSISTENCY OF THE CHAIN)
@@ -294,8 +307,8 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
                 first_of_month_value = first_of_period(pulse, "month")
                 first_of_year_value = first_of_period(pulse, "year")
             except (BeaconServerError, BeaconPulseError):
-                print("\nBEACON SERVER IS DOWN")
-                print("LAST RECORD ANALYZED #" + str(i - 1))
+                vprint("\nBEACON SERVER IS DOWN")
+                vprint("LAST RECORD ANALYZED #" + str(i - 1))
                 break
 
             if first_of_hour_value != pulse["listValue"]["hour"]:
@@ -360,8 +373,8 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
                 try:
                     raw_events = get_json(CLCERT_BEACON_URL + RAW_PREFIX + "id/" + str(i))
                 except (BeaconServerError, BeaconPulseError):
-                    print("\nBEACON SERVER IS DOWN")
-                    print("LAST RECORD ANALYZED #" + str(i - 1))
+                    vprint("\nBEACON SERVER IS DOWN")
+                    vprint("LAST RECORD ANALYZED #" + str(i - 1))
                     break
                 for event in raw_events:
                     source_id = event["source_id"]
@@ -371,24 +384,24 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses'):
                             hash_errors.append(i)
 
 # PRINT FINAL REPORT
-print("\nFINAL REPORT:")
+vprint("\nFINAL REPORT:")
 if not any(chain_errors.values()) and not pre_commitment_errors and not any(signature_errors.values()) and \
         not output_errors and not hash_errors:
-    print("All pulses analyzed were correct!")
+    vprint("All pulses analyzed were correct!")
 else:
     if any(chain_errors.values()):
-        print("CHAIN ERRORS")
-        print(str(chain_errors) + '\n')
+        vprint("CHAIN ERRORS")
+        vprint(str(chain_errors) + '\n')
     if pre_commitment_errors:
-        print("PRE-COMMITMENT ERRORS")
-        print(str(pre_commitment_errors) + '\n')
+        vprint("PRE-COMMITMENT ERRORS")
+        vprint(str(pre_commitment_errors) + '\n')
     if any(signature_errors.values()):
-        print("SIGNATURE ERRORS")
-        print(str(signature_errors) + '\n')
+        vprint("SIGNATURE ERRORS")
+        vprint(str(signature_errors) + '\n')
     if output_errors:
-        print("OUTPUT VALUES ERRORS")
-        print(str(output_errors) + '\n')
+        vprint("OUTPUT VALUES ERRORS")
+        vprint(str(output_errors) + '\n')
     if hash_errors:
-        print("HASH OF EXTERNAL EVENTS ERRORS")
-        print(str(hash_errors))
-print("")
+        vprint("HASH OF EXTERNAL EVENTS ERRORS")
+        vprint(str(hash_errors))
+vprint("")
