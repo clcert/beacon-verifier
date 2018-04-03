@@ -173,6 +173,9 @@ parser.add_argument("-i", "--initial-pulse",
 parser.add_argument("-f", "--final-pulse",
                     action="store", dest="last_index", default=0, type=int,
                     help="last pulse to check the chain")
+parser.add_argument("-t", "--tail",
+                    action="store", dest="tail", default=0, type=int,
+                    help="number of last pulses to check")
 parser.add_argument("-w", "--beacon-web",
                     action="store", dest="beacon_web", default="", type=str,
                     help="beacon server web host")
@@ -190,25 +193,38 @@ vprint = print if options.verbose else lambda *a, **k: None
 
 vprint("CLCERT Random Beacon - Chain Verifier")
 
-# SET LIMITS FOR CHAIN TO CHECK
-first_index = int(options.first_index)
+# CHECK FOR INCOMPATIBILITIES IN OPTIONS
+if options.tail != 0 and (options.first_index != 1 or options.last_index != 0):
+    vprint('ERROR: CAN\'T USE -t AND -i OR -f OPTIONS')
+    sys.exit()
+
+# SET FIRST INDEX IF TAIL OPTION IS NOT GIVEN
+if options.tail == 0:
+    first_index = int(options.first_index)
 
 # CHECK BEACON HOST OPTION
 if options.beacon_web != "":
     CLCERT_BEACON_URL = options.beacon_web
 
+# GET ID OF LAST PULSE
 try:
     lp = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + "last")
 except (BeaconServerError, BeaconPulseError):
     vprint("BEACON SERVER IS DOWN")
     sys.exit()
-
 last_pulse_id = lp["id"]
 
+# SET LAST INDEX
 if options.last_index == 0:
     last_index = last_pulse_id
 else:
     last_index = int(options.last_index)
+
+# SET FIRST INDEX IF TAIL OPTION IS GIVEN
+if options.tail != 0:
+    first_index = last_index - options.tail + 1
+    if first_index < 1:
+        first_index = 1
 
 # CHECK THAT LAST INDEX IS BEFORE THE LAST PULSE GENERATED
 if last_index > last_pulse_id:
@@ -222,7 +238,6 @@ if last_index < first_index:
 
 # SET WHICH TESTS ARE GOING TO BE RUN
 if options.all:
-    # TODO: Automatically set all options to True
     options.chain = True
     options.pre_commitment = True
     options.signature = True
