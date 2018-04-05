@@ -404,6 +404,7 @@ if not any(chain_errors.values()) and not pre_commitment_errors and not any(sign
         not output_errors and not hash_errors:
     vprint("All pulses analyzed were correct!")
 else:
+    print('ERRORS (' + str(datetime.datetime.now().replace(microsecond=0)) + ')')
     if any(chain_errors.values()):
         vprint("CHAIN ERRORS")
         vprint(str(chain_errors) + '\n')
