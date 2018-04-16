@@ -1,3 +1,5 @@
+![](https://www.clcert.cl/img/logo-clcert.png)
+
 # CLCERT Random Beacon Verifier Scripts
 
 Python scripts that verify the correctness of the values delivered by the CLCERT Random Beacon service.
