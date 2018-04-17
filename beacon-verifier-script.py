@@ -100,8 +100,8 @@ def verify_output_value(curr_pulse):
     return sloth_obj.verify(hash_value(curr_pulse["signatureValue"] + data), curr_pulse["outputValue"], curr_pulse["witness"], prime_p=prime_p)
 
 
-def first_of_period(curr_pulse, period):
-    if curr_pulse["id"] == 1:
+def first_of_period(curr_pulse, start_of_chain, period):
+    if curr_pulse["id"] == 1 or curr_pulse["status"] == 1:
         return "0" * 128
     else:
         curr_pulse_date = datetime.datetime.strptime(curr_pulse["timestamp"], "%a, %d %b %Y %H:%M:%S %Z").replace(
@@ -125,8 +125,13 @@ def first_of_period(curr_pulse, period):
         try:
             first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
                                                str(int(start_of_current_period.timestamp())))
+            # start_of_chain = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
+            #                           'start-chain/' + str(int(curr_pulse["time"])))
         except (BeaconServerError, BeaconPulseError) as e:
             raise e
+
+        if start_of_chain["timestamp"] >= first_of_current_period["timestamp"]:
+            return start_of_chain["outputValue"]
 
         if start_of_current_period == curr_pulse_date:
             if period == "hour":
@@ -143,6 +148,9 @@ def first_of_period(curr_pulse, period):
                                                    str(int(start_of_current_period.timestamp())))
             except (BeaconServerError, BeaconPulseError) as e:
                 raise e
+
+        if start_of_chain["timestamp"] >= first_of_current_period["timestamp"]:
+            return start_of_chain["outputValue"]
 
         return first_of_current_period["outputValue"]
 
@@ -179,6 +187,9 @@ parser.add_argument("-t", "--tail",
 parser.add_argument("-w", "--beacon-web",
                     action="store", dest="beacon_web", default="", type=str,
                     help="beacon server web host")
+parser.add_argument("-x", "--active-chain",
+                    action="store_true", dest="active_chain", default=False,
+                    help="check only current active chain")
 parser.add_argument("-v", "--verbose",
                     action="store_true", dest="verbose", default=False,
                     help="verbose mode")
@@ -225,6 +236,11 @@ if options.tail != 0:
     first_index = last_index - options.tail + 1
     if first_index < 1:
         first_index = 1
+
+# SET INITIAL INDEX IF ONLY ACTIVE CHAIN WILL BE CHECKED
+if options.active_chain:
+    start_of_chain = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + 'start-chain/' + str(lp["time"]))
+    first_index = start_of_chain["id"]
 
 # CHECK THAT LAST INDEX IS BEFORE THE LAST PULSE GENERATED
 if last_index > last_pulse_id:
@@ -307,6 +323,8 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not opt
     # CHECK PREVIOUS VALUES (CONSISTENCY OF THE CHAIN)
     if options.chain:
 
+        start_of_chain = get_json(CLCERT_BEACON_URL + PULSE_PREFIX + 'start-chain/' + str(int(pulse["time"])))
+
         # The first record doesn't need to check previous values
         if i is 1:
             previous_value = first_of_hour_value = first_of_day_value = first_of_month_value = first_of_year_value = \
@@ -317,10 +335,10 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not opt
             previous_value = pulse["outputValue"]
 
             try:
-                first_of_hour_value = first_of_period(pulse, "hour")
-                first_of_day_value = first_of_period(pulse, "day")
-                first_of_month_value = first_of_period(pulse, "month")
-                first_of_year_value = first_of_period(pulse, "year")
+                first_of_hour_value = first_of_period(pulse, start_of_chain, "hour")
+                first_of_day_value = first_of_period(pulse, start_of_chain, "day")
+                first_of_month_value = first_of_period(pulse, start_of_chain, "month")
+                first_of_year_value = first_of_period(pulse, start_of_chain, "year")
             except (BeaconServerError, BeaconPulseError):
                 vprint("\nBEACON SERVER IS DOWN")
                 vprint("LAST RECORD ANALYZED #" + str(i - 1))
