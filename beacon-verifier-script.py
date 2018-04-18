@@ -125,12 +125,10 @@ def first_of_period(curr_pulse, start_of_chain, period):
         try:
             first_of_current_period = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
                                                str(int(start_of_current_period.timestamp())))
-            # start_of_chain = get_json(CLCERT_BEACON_URL + PULSE_PREFIX +
-            #                           'start-chain/' + str(int(curr_pulse["time"])))
         except (BeaconServerError, BeaconPulseError) as e:
             raise e
 
-        if start_of_chain["timestamp"] >= first_of_current_period["timestamp"]:
+        if start_of_chain["time"] >= first_of_current_period["time"]:
             return start_of_chain["outputValue"]
 
         if start_of_current_period == curr_pulse_date:
@@ -149,7 +147,7 @@ def first_of_period(curr_pulse, start_of_chain, period):
             except (BeaconServerError, BeaconPulseError) as e:
                 raise e
 
-        if start_of_chain["timestamp"] >= first_of_current_period["timestamp"]:
+        if start_of_chain["time"] >= first_of_current_period["time"]:
             return start_of_chain["outputValue"]
 
         return first_of_current_period["outputValue"]
