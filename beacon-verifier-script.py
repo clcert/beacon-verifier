@@ -17,6 +17,7 @@ import datetime
 import requests
 from dateutil import relativedelta
 from cryptography import x509
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
@@ -28,10 +29,9 @@ from json.decoder import JSONDecodeError
 
 from sloth import SlothUnicornGenerator
 
-CLCERT_BEACON_URL = "http://beacon.clcert.cl/"
+CLCERT_BEACON_URL = "https://beacon.clcert.cl/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
 RAW_PREFIX = "beacon/1.0/raw/"
-requests.packages.urllib3.disable_warnings()  # Disable warning for self signed certificate
 
 
 class BeaconServerError(Exception):
@@ -51,7 +51,7 @@ def get_json(url, retry=0):
         raise BeaconServerError
 
     try:
-        req = requests.get(url, verify=False)  # TODO: change for not self signed certificate
+        req = requests.get(url)
     except ConnectionError:
         raise BeaconServerError
 
@@ -287,13 +287,19 @@ vprint("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
 # Get public certificate (for now)
 try:
-    public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1", verify=False).content  # TODO: change for not self signed certificate
+    public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").content
 except ConnectionError:
     vprint("BEACON SERVER IS DOWN")
     sys.exit()
 
-cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
-public_key = cert.public_key()
+# cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
+# public_key = cert.public_key()
+
+with open('beacon1.pem', 'rb') as file:
+    pem_pk = file.read()
+    file.close()
+
+public_key = load_pem_public_key(pem_pk, backend=default_backend())
 
 if first_index != 1:
     try:
@@ -378,11 +384,11 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not opt
                 try:
                     public_key.verify(bytes.fromhex(pulse["signatureValue"]),
                                       message_to_sign.encode(),
-                                      padding.PSS(
-                                          mgf=padding.MGF1(hashes.SHA256()),
-                                          salt_length=padding.PSS.MAX_LENGTH
+                                      padding=padding.PSS(
+                                          mgf=padding.MGF1(hashes.SHA512()),
+                                          salt_length=20
                                       ),
-                                      hashes.SHA256())
+                                      algorithm=hashes.SHA512())
                 except InvalidSignature:
                     signature_errors["signature"].append(i)
 
