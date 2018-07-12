@@ -1,5 +1,5 @@
 # Script that verifies the correctness of all the pulses generated
-# by the CLCERT Random Beacon.
+# by the CLCERT Randomness Beacon.
 # In particular, this script verifies the correctness of the following properties on each pulse:
 # - Hash of external events (-e)
 # - Slow Hash function on signature to produce final output (-o)
@@ -16,16 +16,13 @@ import sys
 import datetime
 import requests
 from dateutil import relativedelta
-from cryptography import x509
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from tqdm import tqdm
-import time
 from requests.exceptions import ConnectionError
-from json.decoder import JSONDecodeError
 
 from sloth import SlothUnicornGenerator
 
@@ -45,7 +42,6 @@ class BeaconPulseError(Exception):
 
 
 def get_json(url, retry=0):
-    # time.sleep(0.05)  # Prevent 'Too Many Requests' response from server
 
     if retry == 5:
         raise BeaconServerError
@@ -193,14 +189,9 @@ parser.add_argument("-v", "--verbose",
                     help="verbose mode")
 options = parser.parse_args()
 
-# CHECK FOR NO OPTIONS
-# if not sum(vars(options).values()) > 1:
-#     parser.print_help()
-#     sys.exit()
-
 vprint = print if options.verbose else lambda *a, **k: None
 
-vprint("CLCERT Random Beacon - Chain Verifier")
+vprint("CLCERT Randomness Beacon - Chain Verifier")
 
 # CHECK FOR INCOMPATIBILITIES IN OPTIONS
 if options.tail != 0 and (options.first_index != 1 or options.last_index != 0):
@@ -285,21 +276,14 @@ if options.ext_values_hash:
 
 vprint("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 
-# Get public certificate (for now)
-try:
-    public_certificate = requests.get(CLCERT_BEACON_URL + "beacon/1.0/certificate/1").content
-except ConnectionError:
-    vprint("BEACON SERVER IS DOWN")
-    sys.exit()
-
-# cert = x509.load_pem_x509_certificate(public_certificate, default_backend())
-# public_key = cert.public_key()
-
-with open('beacon1.pem', 'rb') as file:
-    pem_pk = file.read()
-    file.close()
-
-public_key = load_pem_public_key(pem_pk, backend=default_backend())
+# Get public key of the service
+if options.signature:
+    try:
+        pem_public_key = requests.get(CLCERT_BEACON_URL + "beacon/1.0/public.pem").content
+    except ConnectionError:
+        vprint("BEACON SERVER IS DOWN")
+        sys.exit()
+    public_key = load_pem_public_key(pem_public_key, backend=default_backend())
 
 if first_index != 1:
     try:
