@@ -3,11 +3,11 @@ beautifulsoup4==4.6.0
 certifi==2018.4.16
 cffi==1.11.5
 chardet==3.0.4
-cryptography==2.2.2
-idna==2.6
+cryptography==2.3
+idna==2.7
 pycparser==2.18
 python-dateutil==2.7.2
-requests==2.18.4
+requests==2.19.1
 six==1.11.0
-tqdm==4.23.2
-urllib3==1.22
+tqdm==4.24.0
+urllib3==1.23
