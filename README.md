@@ -8,6 +8,7 @@ Python scripts that verify the correctness of the values delivered by the CLCERT
 
 `$ pip install -r requirements.txt`
 
+The file `sloth.py` is necessary in order to run both scripts.
 
 ### Chain Consistency
 
