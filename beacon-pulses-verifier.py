@@ -9,7 +9,7 @@ from dateutil import relativedelta
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509 import load_pem_x509_certificate
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric import padding, utils
+from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 
 
@@ -121,14 +121,14 @@ def find_prev_by_type(list_values, type):
 
 def get_ext_values_for_signature(external_values):
     output = b''
-    if type(external_values) is list:
+    if type(external_values) is list:  # CLCERT external values is a list of objects
         for external in external_values:
             output += len(bytes.fromhex(external["sourceId"])).to_bytes(4, byteorder='big')
             output += bytes.fromhex(external_values["sourceId"])
             output += (external["statusCode"]).to_bytes(4, byteorder='big')  # 4-byte big-endian
             output += len(bytes.fromhex(external["value"])).to_bytes(4, byteorder='big')
             output += bytes.fromhex(external_values["value"])
-    else:
+    else:  # NIST external values is just one object
         output += len(bytes.fromhex(external_values["sourceId"])).to_bytes(4, byteorder='big')
         output += bytes.fromhex(external_values["sourceId"])
         output += (external_values["statusCode"]).to_bytes(4, byteorder='big')  # 4-byte big-endian
@@ -206,20 +206,27 @@ def select_random_pulses(seed, total, select):
 
 
 # PARSE OPTIONS
-parser = argparse.ArgumentParser(description="(NIST/CLCERT) Beacon Pulses Verifier Script")
+parser = argparse.ArgumentParser(description="(NIST/CLCERT) Randomness Beacon Pulses Verifier Script")
 parser.add_argument("-v", "--verbose", action="store_true", dest="verbose", default=False)
 
-parser.add_argument("-a", "--all", action="store_true", dest="all", default=False)
-parser.add_argument("-c", "--precommitment", action="store_true", dest="comm", default=False)
-parser.add_argument("-s", "--signature", action="store_true", dest="sign", default=False)
-parser.add_argument("-o", "--outputValue", action="store_true", dest="outp", default=False)
-parser.add_argument("-p", "--previousValues", action="store_true", dest="prev", default=False)
+# Organization to verify
+org_group = parser.add_argument_group('Organization')
+org_group.add_argument("--organization", choices=['nist', 'clcert', 'test'], dest="org", type=str)
 
-parser.add_argument("-e", "--entity", choices=['nist', 'clcert', 'test'], dest="ent", type=str)
+# Tests to execute
+tests_group = parser.add_argument_group('Tests')
+tests_group.add_argument("-a", "--all", action="store_true", dest="all", default=False)
+tests_group.add_argument("-c", "--precommitment", action="store_true", dest="comm", default=False)
+tests_group.add_argument("-s", "--signature", action="store_true", dest="sign", default=False)
+tests_group.add_argument("-o", "--outputValue", action="store_true", dest="outp", default=False)
+tests_group.add_argument("-p", "--previousValues", action="store_true", dest="prev", default=False)
 
-parser.add_argument("-i", "--initial", action="store", dest="ini", type=int, default=1)
-parser.add_argument("-f", "--final", action="store", dest="fin", type=int, default=0)
-parser.add_argument("--random", action="store", dest="random_pulses", type=int, default=0)
+# Delimiters on which pulses to verify
+pulses_group = parser.add_argument_group('Pulses to Verify')
+pulses_group.add_argument("-i", "--initial", action="store", dest="ini", type=int, default=1)
+pulses_group.add_argument("-f", "--final", action="store", dest="fin", type=int, default=0)
+pulses_group.add_argument("--random", action="store", dest="random_pulses", type=int, default=0)
+pulses_group.add_argument("--only", action="store", dest="one_pulse", type=int, default=0)
 
 options = parser.parse_args()
 
@@ -229,13 +236,13 @@ vprint("NIST/CLCERT Randomness Beacon - Pulses Verifier")
 
 BASE_URL = ''
 API_VERSION = ''
-if options.ent == 'nist':
+if options.org == 'nist':
     BASE_URL = 'https://beacon.nist.gov/beacon/'
     API_VERSION = '2.0/'
-elif options.ent == 'clcert':
+elif options.org == 'clcert':
     BASE_URL = 'https://beacon.clcert.cl/beacon/'
     API_VERSION = '1.1/'
-elif options.ent == 'test':
+elif options.org == 'test':
     BASE_URL = 'http://localhost:5000/beacon/'
     API_VERSION = '1.1/'
 CHAIN_INDEX = "1"
@@ -247,7 +254,7 @@ if options.all:
 
 vprint("TESTS TO BE EXECUTED:")
 if options.comm:
-    vprint("- PreCommitments")
+    vprint("- Precommitment Values")
 if options.sign:
     vprint("- Signatures")
 if options.outp:
@@ -259,29 +266,36 @@ lp = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/last")
 li = lp["pulseIndex"]
 certs = {lp["certificateId"]: get_certificate(lp["certificateId"])}
 
-if options.ini != 1:
-    prev_pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(options.ini - 1))
-    prev = prev_pulse["outputValue"]
-    pre_comm = prev_pulse["precommitmentValue"]
+pulses_to_verify = []
+if options.random_pulses != 0:
+    pulses_to_verify = select_random_pulses(lp["outputValue"], li, options.random_pulses)
+elif options.one_pulse != 0:
+    pulses_to_verify = [options.one_pulse]
+else:
+    if options.fin == 0:
+        options.fin = li
+    pulses_to_verify = range(options.ini, options.fin + 1)
 
-if options.fin == 0:
-    options.fin = li
-
-pulses_to_verify = range(options.ini, options.fin + 1)
-
-vprint("Pulses from #" + str(options.ini) + " to #" + str(options.fin))
+if options.random_pulses:
+    vprint("Pulses: " + str(pulses_to_verify))
+elif options.one_pulse:
+    vprint("Pulse #" + str(options.one_pulse))
+else:
+    vprint("Pulses from #" + str(options.ini) + " to #" + str(options.fin))
 for i in tqdm(pulses_to_verify, unit='pulses'):
     pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i))
 
+    if i != 1:
+        prev_pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i - 1))
+        pre_comm = prev_pulse["precommitmentValue"]
+        prev = prev_pulse["outputValue"]
+
     # CHECK PRE-COMMITMENT VALUE
     if options.comm:
-        if i is 1:
-            pre_comm = pulse["precommitmentValue"]
-        else:
+        if i != 1:
             commitment = hashed_value(pulse["localRandomValue"], pulse["cipherSuite"])
             if commitment.lower() != pre_comm.lower():
                 print('Invalid RandomValue/Commitment for Pulse #' + str(i))
-            pre_comm = pulse["precommitmentValue"]
 
     # CHECK SIGNATURE
     if options.sign:
@@ -302,12 +316,9 @@ for i in tqdm(pulses_to_verify, unit='pulses'):
 
     # CHECK PREVIOUS VALUES
     if options.prev:
-        if i is 1:
-            prev = prev_hour = prev_day = prev_month = prev_year = pulse["outputValue"]
-        else:
+        if i != 1:
             if prev.lower() != find_prev_by_type(pulse["listValues"], "previous").lower():
                 print('Invalid Previous Value for Pulse #' + str(i))
-            prev = pulse["outputValue"]
 
             prev_hour = first_of(pulse, "hour", CHAIN_INDEX)
             prev_day = first_of(pulse, "day", CHAIN_INDEX)
