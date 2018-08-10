@@ -124,10 +124,10 @@ def get_ext_values_for_signature(external_values):
     if type(external_values) is list:  # CLCERT external values is a list of objects
         for external in external_values:
             output += len(bytes.fromhex(external["sourceId"])).to_bytes(4, byteorder='big')
-            output += bytes.fromhex(external_values["sourceId"])
+            output += bytes.fromhex(external["sourceId"])
             output += (external["statusCode"]).to_bytes(4, byteorder='big')  # 4-byte big-endian
             output += len(bytes.fromhex(external["value"])).to_bytes(4, byteorder='big')
-            output += bytes.fromhex(external_values["value"])
+            output += bytes.fromhex(external["value"])
     else:  # NIST external values is just one object
         output += len(bytes.fromhex(external_values["sourceId"])).to_bytes(4, byteorder='big')
         output += bytes.fromhex(external_values["sourceId"])
@@ -144,23 +144,44 @@ def verify_signature(public_key, signature, message, cipher_suite):
                           message,
                           padding=padding.PKCS1v15(),
                           algorithm=hashes.SHA512())
+    elif cipher_suite == 1:
+        public_key.verify(signature,
+                          message,
+                          padding=padding.PSS(
+                              mgf=padding.MGF1(hashes.SHA512()),
+                              salt_length=20),
+                          algorithm=hashes.SHA512())
 
 
-def calculate_output_value(pulse_object):
+def verify_output_value(pulse_object, prime=None):
     cipher_suite = pulse_object["cipherSuite"]
     assert cipher_suite == 0 or cipher_suite == 1
+
+    signature_input = get_message_signed(pulse_object)
+    signature = bytes.fromhex(pulse_object["signatureValue"])
+    message_for_output = signature_input + signature
+    output = pulse_object["outputValue"]
+
     if cipher_suite == 0:
         h = hash_fn(cipher_suite)()
-
-        signature_input = get_message_signed(pulse_object)
-        signature = bytes.fromhex(pulse_object["signatureValue"])
-
-        h.update(signature_input)
-        h.update(signature)
-
-        return h.digest().hex()
+        h.update(message_for_output)
+        return h.hexdigest().lower() == output.lower()
     elif cipher_suite == 1:
-        pass
+        from sloth import SlothUnicornGenerator
+
+        iterations = pulse_object["iterations"]
+        witness = pulse_object["witness"]
+
+        sloth_obj = SlothUnicornGenerator(message_for_output, iterations)
+        comm = calculate_commitment_for_sloth(message_for_output)
+        return sloth_obj.verify(comm,
+                                output,
+                                witness,
+                                prime_p=prime)
+
+
+def calculate_commitment_for_sloth(input):
+    return hashlib.sha3_512(hashlib.sha3_512(input).hexdigest().encode('ascii')).hexdigest()
 
 
 def first_of(pulse_object, period, chain_index):
@@ -282,6 +303,8 @@ elif options.one_pulse:
     vprint("Pulse #" + str(options.one_pulse))
 else:
     vprint("Pulses from #" + str(options.ini) + " to #" + str(options.fin))
+
+prime_p = None
 for i in tqdm(pulses_to_verify, unit='pulses'):
     pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i))
 
@@ -310,8 +333,12 @@ for i in tqdm(pulses_to_verify, unit='pulses'):
 
     # CHECK OUTPUT VALUE
     if options.outp:
-        expected_output_value = calculate_output_value(pulse)
-        if expected_output_value.lower() != pulse["outputValue"].lower():
+        if prime_p is None and pulse["cipherSuite"] == 1:
+            from sloth import SlothUnicornGenerator
+            max_message = '0' * 2195
+            sloth1 = SlothUnicornGenerator(max_message, 1)
+            prime_p = sloth1.generate_prime_p(sloth1.generate_sloth_input())
+        if not verify_output_value(pulse, prime_p):
             print('Invalid Output Value for Pulse #' + str(i))
 
     # CHECK PREVIOUS VALUES
