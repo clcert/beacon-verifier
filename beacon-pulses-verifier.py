@@ -259,22 +259,32 @@ parser.add_argument("-v", "--verbose", action="store_true", dest="verbose", defa
 
 # Organization to verify
 org_group = parser.add_argument_group('Organization')
-org_group.add_argument("--organization", choices=['NIST', 'CLCERT', 'testing'], dest="org", type=str)
+org_group.add_argument("--organization", choices=['NIST', 'CLCERT', 'testing'], dest="org", type=str,
+                       help="Select which randomness beacon service to analyze.")
 
 # Tests to execute
-tests_group = parser.add_argument_group('Tests')
-tests_group.add_argument("-a", "--all", action="store_true", dest="all", default=False)
-tests_group.add_argument("-c", "--precommitment", action="store_true", dest="comm", default=False)
-tests_group.add_argument("-s", "--signature", action="store_true", dest="sign", default=False)
-tests_group.add_argument("-o", "--outputValue", action="store_true", dest="outp", default=False)
-tests_group.add_argument("-p", "--previousValues", action="store_true", dest="prev", default=False)
+tests_group = parser.add_argument_group('Properties to analyze')
+tests_group.add_argument("-a", "--all", action="store_true", dest="all", default=False,
+                         help="Run all tests (check all properties).")
+tests_group.add_argument("-c", "--preCommitment", action="store_true", dest="comm", default=False,
+                         help="Checks only local random value pre-committed.")
+tests_group.add_argument("-s", "--signature", action="store_true", dest="sign", default=False,
+                         help="Checks only valid signature.")
+tests_group.add_argument("-o", "--outputValue", action="store_true", dest="outp", default=False,
+                         help="Checks only correct generation of output value using hash function.")
+tests_group.add_argument("-p", "--previousValues", action="store_true", dest="prev", default=False,
+                         help="Checks only reference of previous pulses already created in the chain.")
 
 # Delimiters on which pulses to verify
-pulses_group = parser.add_argument_group('Pulses to Verify')
-pulses_group.add_argument("-i", "--initial", action="store", dest="ini", type=int, default=1)
-pulses_group.add_argument("-f", "--final", action="store", dest="fin", type=int, default=0)
-pulses_group.add_argument("--random", action="store", dest="random_pulses", type=int, default=0)
-pulses_group.add_argument("--only", action="store", dest="one_pulse", type=int, default=0)
+pulses_group = parser.add_argument_group('Pulses to verify')
+pulses_group.add_argument("--init", action="store", dest="init_id", type=int, default=1,
+                          help="Set initial pulse as the one with id INIT_ID to analyze.")
+pulses_group.add_argument("--final", action="store", dest="final_id", type=int, default=0,
+                          help="Set final pulse as the one with id FINAL_ID to analyze.")
+pulses_group.add_argument("--random", action="store", dest="random_pulses", type=int, default=0,
+                          help="Checks only RANDOM_PULSES pulses selected at random.")
+pulses_group.add_argument("--only", action="store", dest="only_id", type=int, default=0,
+                          help="Checks only the pulse with id ONLY_ID.")
 
 options = parser.parse_args()
 
@@ -317,19 +327,19 @@ certs = {lp["certificateId"]: get_certificate(lp["certificateId"])}
 pulses_to_verify = []
 if options.random_pulses != 0:
     pulses_to_verify = select_random_pulses(lp["outputValue"], li, options.random_pulses)
-elif options.one_pulse != 0:
-    pulses_to_verify = [options.one_pulse]
+elif options.only_id != 0:
+    pulses_to_verify = [options.only_id]
 else:
-    if options.fin == 0:
-        options.fin = li
-    pulses_to_verify = range(options.ini, options.fin + 1)
+    if options.final_id == 0:
+        options.final_id = li
+    pulses_to_verify = range(options.init_id, options.final_id + 1)
 
 if options.random_pulses:
     vprint("Pulses: " + str(pulses_to_verify))
-elif options.one_pulse:
-    vprint("Pulse #" + str(options.one_pulse))
+elif options.only_id:
+    vprint("Pulse #" + str(options.only_id))
 else:
-    vprint("Pulses from #" + str(options.ini) + " to #" + str(options.fin))
+    vprint("Pulses from #" + str(options.init_id) + " to #" + str(options.final_id))
 
 prime_p = None
 prev_comm = prev_value = None
