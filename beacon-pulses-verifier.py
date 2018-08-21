@@ -1,3 +1,12 @@
+# Python script that verifies the correctness of all the pulses generated
+# by both NIST (2.0) and CLCERT (2.0) Randomness Beacons.
+# In particular, this script verifies the correctness of the following properties on each pulse:
+# - PreCommitment on local random value
+# - Valid pulse's Signature
+# - Using of previous values
+# - Hash function on signature to produce final output
+# The pulses to analyze are the ones generated in the last active chain.
+
 import argparse
 import random
 from tqdm import tqdm
@@ -30,7 +39,6 @@ def hashed_value(value, cipher_suite):
 
 def get_certificate(certificate_id):
     req = requests.get(BASE_URL + API_VERSION + "certificate/" + certificate_id)
-    # cert_raw = req.content
     cert_raw = req.content.replace(b'-M', b'-\r\nM')  # temporary fix for NIST certificate
     return load_pem_x509_certificate(cert_raw, default_backend())
 
@@ -196,11 +204,14 @@ def first_of(pulse_object, period, chain_index):
     elif period == 'month':
         first_of_period = ts.replace(day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=datetime.timezone.utc)
     elif period == 'year':
-        first_of_period = ts.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0, tzinfo=datetime.timezone.utc)
+        first_of_period = ts.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0,
+                                     tzinfo=datetime.timezone.utc)
 
-    first_pulse_of_period = get_pulse(BASE_URL + API_VERSION + "pulse/time/" + str(int(first_of_period.timestamp()*1000)))
+    first_pulse_of_period = get_pulse(
+        BASE_URL + API_VERSION + "pulse/time/" + str(int(first_of_period.timestamp() * 1000)))
 
-    if first_of_chain["pulseIndex"] >= first_pulse_of_period["pulseIndex"]:
+    if first_of_chain["chainIndex"] > first_pulse_of_period["chainIndex"] or first_of_chain["pulseIndex"] >= \
+            first_pulse_of_period["pulseIndex"]:
         return first_of_chain["outputValue"]
 
     if first_pulse_of_period["pulseIndex"] == pulse_object["pulseIndex"]:
@@ -213,9 +224,11 @@ def first_of(pulse_object, period, chain_index):
         elif period == "year":
             first_of_period = first_of_period - relativedelta.relativedelta(years=1)
 
-    first_pulse_of_period = get_pulse(BASE_URL + API_VERSION + "pulse/time/" + str(int(first_of_period.timestamp()*1000)))
+    first_pulse_of_period = get_pulse(
+        BASE_URL + API_VERSION + "pulse/time/" + str(int(first_of_period.timestamp() * 1000)))
 
-    if first_of_chain["pulseIndex"] >= first_pulse_of_period["pulseIndex"]:
+    if first_of_chain["chainIndex"] > first_pulse_of_period["chainIndex"] or first_of_chain["pulseIndex"] >= \
+            first_pulse_of_period["pulseIndex"]:
         return first_of_chain["outputValue"]
 
     return first_pulse_of_period["outputValue"]
@@ -226,13 +239,27 @@ def select_random_pulses(seed, total, select):
     return random.sample(range(0, total + 1), select)
 
 
+def valid_pulse(pulse_obj):
+    if pulse_obj is not None:
+        return pulse_obj["statusCode"] != 102 and pulse_obj["statusCode"] != 103
+    return True
+
+
+def get_closest_previous_pulse_valid(index):
+    for i in reversed(range(index)):
+        prev_pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i))
+        if valid_pulse(prev_pulse):
+            return prev_pulse
+    return None
+
+
 # PARSE OPTIONS
 parser = argparse.ArgumentParser(description="(NIST/CLCERT) Randomness Beacon Pulses Verifier Script")
 parser.add_argument("-v", "--verbose", action="store_true", dest="verbose", default=False)
 
 # Organization to verify
 org_group = parser.add_argument_group('Organization')
-org_group.add_argument("--organization", choices=['nist', 'clcert', 'test'], dest="org", type=str)
+org_group.add_argument("--organization", choices=['NIST', 'CLCERT', 'testing'], dest="org", type=str)
 
 # Tests to execute
 tests_group = parser.add_argument_group('Tests')
@@ -257,16 +284,15 @@ vprint("NIST/CLCERT Randomness Beacon - Pulses Verifier")
 
 BASE_URL = ''
 API_VERSION = ''
-if options.org == 'nist':
+if options.org == 'NIST':
     BASE_URL = 'https://beacon.nist.gov/beacon/'
     API_VERSION = '2.0/'
-elif options.org == 'clcert':
+elif options.org == 'CLCERT':
     BASE_URL = 'https://beacon.clcert.cl/beacon/'
-    API_VERSION = '1.1/'
-elif options.org == 'test':
-    BASE_URL = 'http://localhost:5000/beacon/'
-    API_VERSION = '1.1/'
-CHAIN_INDEX = "1"
+    API_VERSION = '2.0/'
+elif options.org == 'testing':
+    BASE_URL = 'http://0.0.0.0/beacon/'
+    API_VERSION = '2.0/'
 
 vprint("HOST URL: " + BASE_URL + API_VERSION)
 
@@ -283,8 +309,9 @@ if options.outp:
 if options.prev:
     vprint("- Previous Values")
 
-lp = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/last")
+lp = get_pulse(BASE_URL + API_VERSION + "chain/last/pulse/last")
 li = lp["pulseIndex"]
+CHAIN_INDEX = str(lp["chainIndex"])
 certs = {lp["certificateId"]: get_certificate(lp["certificateId"])}
 
 pulses_to_verify = []
@@ -305,36 +332,45 @@ else:
     vprint("Pulses from #" + str(options.ini) + " to #" + str(options.fin))
 
 prime_p = None
+prev_comm = prev_value = None
 for i in tqdm(pulses_to_verify, unit='pulses'):
     pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i))
 
     if i != 1:
-        prev_pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i - 1))
-        pre_comm = prev_pulse["precommitmentValue"]
-        prev = prev_pulse["outputValue"]
+        prev_pulse_valid = get_closest_previous_pulse_valid(pulse["pulseIndex"])
+        prev_comm = prev_pulse_valid["precommitmentValue"]
+        prev_value = prev_pulse_valid["outputValue"]
 
     # CHECK PRE-COMMITMENT VALUE
-    if options.comm:
+    if options.comm and valid_pulse(pulse):
         if i != 1:
             commitment = hashed_value(pulse["localRandomValue"], pulse["cipherSuite"])
-            if commitment.lower() != pre_comm.lower():
+            if commitment.lower() != prev_comm.lower():
                 print('Invalid RandomValue/Commitment for Pulse #' + str(i))
 
     # CHECK SIGNATURE
-    if options.sign:
+    if options.sign and valid_pulse(pulse):
         message_signed = get_message_signed(pulse)
         try:
-            verify_signature(certs[pulse["certificateId"]].public_key(),
-                             bytes.fromhex(pulse["signatureValue"]),
-                             message_signed,
-                             pulse["cipherSuite"])
-        except InvalidSignature:
-            print('Invalid Signature for Pulse #' + str(i))
+            hashed_message = pulse["hashedMessage"]
+            if hashed_value(message_signed.hex(), pulse["cipherSuite"]) != hashed_message:
+                print('Invalid Message for Signature in Pulse #' + str(i))
+            else:
+                raise KeyError
+        except KeyError:
+            try:
+                verify_signature(certs[pulse["certificateId"]].public_key(),
+                                 bytes.fromhex(pulse["signatureValue"]),
+                                 message_signed,
+                                 pulse["cipherSuite"])
+            except InvalidSignature:
+                print('Invalid Signature for Pulse #' + str(i))
 
     # CHECK OUTPUT VALUE
-    if options.outp:
+    if options.outp and valid_pulse(pulse):
         if prime_p is None and pulse["cipherSuite"] == 1:
             from sloth import SlothUnicornGenerator
+
             max_message = '0' * 2195
             sloth1 = SlothUnicornGenerator(max_message, 1)
             prime_p = sloth1.generate_prime_p(sloth1.generate_sloth_input())
@@ -342,9 +378,9 @@ for i in tqdm(pulses_to_verify, unit='pulses'):
             print('Invalid Output Value for Pulse #' + str(i))
 
     # CHECK PREVIOUS VALUES
-    if options.prev:
+    if options.prev and valid_pulse(pulse):
         if i != 1:
-            if prev.lower() != find_prev_by_type(pulse["listValues"], "previous").lower():
+            if prev_value.lower() != find_prev_by_type(pulse["listValues"], "previous").lower():
                 print('Invalid Previous Value for Pulse #' + str(i))
 
             prev_hour = first_of(pulse, "hour", CHAIN_INDEX)

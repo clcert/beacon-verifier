@@ -10,14 +10,15 @@
 # - Set the address of the beacon web server (-w <beacon-web-address>)
 
 import json
-import hashlib
 import argparse
 import sys
 import datetime
 import requests
+import hashlib
 from dateutil import relativedelta
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.backends import default_backend
+from cryptography.x509 import load_pem_x509_certificate
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
@@ -93,7 +94,7 @@ def verify_output_value(curr_pulse):
     data = get_msg_to_sign(curr_pulse)
 
     sloth_obj = SlothUnicornGenerator(curr_pulse["signatureValue"] + data, 180)
-    return sloth_obj.verify(hash_value(curr_pulse["signatureValue"] + data), curr_pulse["outputValue"], curr_pulse["witness"], prime_p=prime_p)
+    return sloth_obj.verify(hash_value(hash_value(curr_pulse["signatureValue"] + data)), curr_pulse["outputValue"], curr_pulse["witness"], prime_p=0)
 
 
 def first_of_period(curr_pulse, start_of_chain, period):
@@ -279,7 +280,7 @@ vprint("\nTESTING PULSES FROM #" + str(first_index) + " TO #" + str(last_index))
 # Get public key of the service
 if options.signature:
     try:
-        pem_public_key = requests.get(CLCERT_BEACON_URL + "beacon/1.0/public.pem").content
+        pem_public_key = requests.get(CLCERT_BEACON_URL + "beacon/1.0/public-key/test").content
     except ConnectionError:
         vprint("BEACON SERVER IS DOWN")
         sys.exit()
@@ -351,8 +352,10 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not opt
             if pulse["status"] == 102 or pulse["status"] == 103:
                 pre_commitment = pulse["preCommitmentValue"]
             else:
-                commitment = hash_value(pulse["localRandomValue"])
-                if pulse["localRandomValue"] != ('0' * 128) and commitment != pre_commitment:
+                commitment_opt1 = hash_value(pulse["localRandomValue"])
+                commitment_opt2 = hashlib.sha3_512(bytes.fromhex(pulse["localRandomValue"])).hexdigest()
+                if pulse["localRandomValue"] != ('0' * 128) and \
+                        (commitment_opt1 != pre_commitment and commitment_opt2 != pre_commitment):
                     pre_commitment_errors.append(i)
                 pre_commitment = pulse["preCommitmentValue"]
 
@@ -381,7 +384,7 @@ for i in tqdm(range(first_index, last_index + 1), unit='pulses', disable=not opt
 
         # Only check output value of normal records (status != 102 or 103)
         if pulse["status"] != 102 and pulse["status"] != 103:
-            if verify_output_value(pulse):
+            if not verify_output_value(pulse):
                 output_errors.append(i)
 
     # CHECK HASH OF EXTERNAL EVENTS PRODUCED IN THE LAST HOUR

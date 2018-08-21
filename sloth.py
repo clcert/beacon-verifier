@@ -152,40 +152,40 @@ class SlothUnicornGenerator:
     # Generates sloth hash from input data
     def generate(self, prime_p=0):
 
-        sloth_input = self.generate_sloth_input()
+        sloth_input = self.generate_sloth_input()  # u <- h(s)
 
-        self.commitment = hash_sha3_512(sloth_input)
+        self.commitment = hash_sha3_512(sloth_input)  # c <- h(u)
 
         if prime_p == 0:
-            prime_p = self.generate_prime_p(sloth_input)
+            prime_p = self.generate_prime_p(sloth_input)  # p := 3 mod 4, s.t. p >= 2^{2k}, k security level
 
+        # w_0 in F_p s.t. hat(w_0) = int(u) (0 <= int(u) < 2^{2k} <= p)
         s_int = self.generate_s_int(sloth_input, prime_p)
 
         flip_mask = pow(2, int(self.sloth_prime_len / 2)) - 1
-        # flip_mask = pow(2, 1024) - 1
         ro_func_exp = (prime_p + 1) // 4
 
-        for i in range(self.sloth_num_iter):
-            # s_int = (s_int ^ flip_mask) % prime_p
+        for i in range(self.sloth_num_iter):  # for i = 1, 2, ..., l
+            # w_i <- tau(w_{i-1})
             s_int = pow(s_int, int(flip_mask), prime_p)
             s_int = self.ro_function(s_int, ro_func_exp, prime_p)
 
-        self.witness = hex_strip(s_int)
-        self.sloth_hash = hash_sha3_512(self.witness)
+        self.witness = hex_strip(s_int)  # w <- hex(hat(w_l))
+        self.sloth_hash = hash_sha3_512(self.witness)  # g <- h(w)
 
     # Verifies if given values are correctly generated
-    def verify(self, expected_comm, expected_hash, expected_wit, prime_p=0):
+    def verify(self, expected_comm, expected_hash, expected_wit, prime_p=0):  # s, c, g, w
 
-        sloth_input = self.generate_sloth_input()
+        sloth_input = self.generate_sloth_input()  # u <- h(s)
 
-        self.commitment = hash_sha3_512(sloth_input)
+        self.commitment = hash_sha3_512(sloth_input)  # c1 <- h(u)
 
-        if self.commitment != expected_comm:
+        if self.commitment != expected_comm:  # if c != h(u) return false
             self.verification = self.COMMIT_FAIL
             return False
 
-        wit_hash = hash_sha3_512(expected_wit)
-        if wit_hash != expected_hash:
+        wit_hash = hash_sha3_512(expected_wit)  # w1 <- h(hex(hat(w)))
+        if wit_hash != expected_hash:  # if g != h(hex(hat(w))) return false
             self.verification = self.WITNESS_FAIL
             self.witness_hash = wit_hash
             return False
@@ -195,7 +195,7 @@ class SlothUnicornGenerator:
 
         s_int = self.generate_s_int(sloth_input, prime_p)
 
-        flip_mask = pow(2, self.sloth_prime_len / 2) - 1
+        flip_mask = pow(2, int(self.sloth_prime_len / 2)) - 1
 
         inv_val = int(expected_wit, 16)
         for i in range(self.sloth_num_iter):
@@ -203,8 +203,8 @@ class SlothUnicornGenerator:
                 inv_val = pow(inv_val, 2, prime_p)
             else:
                 inv_val = prime_p - pow(inv_val, 2, prime_p)
-            # inv_val = (inv_val ^ flip_mask) % prime_p
-            inv_val = pow(inv_val, flip_mask, prime_p)
+            inv_val = (inv_val ^ flip_mask) % prime_p
+            # inv_val = pow(inv_val, flip_mask, prime_p)
 
         if inv_val != s_int:
             self.verification = self.HASH_FAIL
@@ -275,6 +275,6 @@ class SlothUnicornGenerator:
     # hash it with sha512 and return hash digest as a result
     def generate_sloth_input(self):
 
-        ret_val = hash_sha3_512(self.message.encode())
+        ret_val = hash_sha3_512(self.message)
 
         return ret_val
