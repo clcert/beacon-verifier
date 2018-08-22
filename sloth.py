@@ -166,9 +166,9 @@ class SlothUnicornGenerator:
         ro_func_exp = (prime_p + 1) // 4
 
         for i in range(self.sloth_num_iter):  # for i = 1, 2, ..., l
-            # w_i <- tau(w_{i-1})
-            s_int = pow(s_int, int(flip_mask), prime_p)
-            s_int = self.ro_function(s_int, ro_func_exp, prime_p)
+            # w_i = tau(w_{i-1}) = sigma(ro(w_{i-1}))
+            s_int = (s_int ^ flip_mask) % prime_p  # sigma(w_{i-1})
+            s_int = self.ro_function(s_int, ro_func_exp, prime_p)  # ro(w_{i-1})
 
         self.witness = hex_strip(s_int)  # w <- hex(hat(w_l))
         self.sloth_hash = hash_sha3_512(self.witness)  # g <- h(w)
@@ -191,22 +191,24 @@ class SlothUnicornGenerator:
             return False
 
         if prime_p == 0:
-            prime_p = self.generate_prime_p(sloth_input)
+            prime_p = self.generate_prime_p(sloth_input)  # p := 3 mod 4, s.t. p >= 2^{2k}, k security level
 
+        # w_0 in F_p s.t. hat(w_0) = int(u) (0 <= int(u) < 2^{2k} <= p)
         s_int = self.generate_s_int(sloth_input, prime_p)
 
         flip_mask = pow(2, int(self.sloth_prime_len / 2)) - 1
 
         inv_val = int(expected_wit, 16)
         for i in range(self.sloth_num_iter):
+            # w_i = tau^{-1}(w_{i-1}) = ro^{-1}(sigma^{-1}(w_{i-1}))
+            # ro^{-1}(w_{i-1})
             if inv_val % 2 == 0:
                 inv_val = pow(inv_val, 2, prime_p)
             else:
                 inv_val = prime_p - pow(inv_val, 2, prime_p)
-            inv_val = (inv_val ^ flip_mask) % prime_p
-            # inv_val = pow(inv_val, flip_mask, prime_p)
+            inv_val = (inv_val ^ flip_mask) % prime_p  # sigma^{-1}(w_{i-1})
 
-        if inv_val != s_int:
+        if inv_val != s_int:  # if hat(w_l) != int(u) return false
             self.verification = self.HASH_FAIL
             return False
 

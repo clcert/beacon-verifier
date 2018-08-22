@@ -301,7 +301,7 @@ elif options.org == 'CLCERT':
     BASE_URL = 'https://beacon.clcert.cl/beacon/'
     API_VERSION = '2.0/'
 elif options.org == 'testing':
-    BASE_URL = 'http://0.0.0.0/beacon/'
+    BASE_URL = 'http://0.0.0.0:5000/beacon/'
     API_VERSION = '2.0/'
 
 vprint("HOST URL: " + BASE_URL + API_VERSION)
@@ -334,6 +334,8 @@ else:
         options.final_id = li
     pulses_to_verify = range(options.init_id, options.final_id + 1)
 
+vprint("\nChain #" + CHAIN_INDEX)
+
 if options.random_pulses:
     vprint("Pulses: " + str(pulses_to_verify))
 elif options.only_id:
@@ -343,7 +345,7 @@ else:
 
 prime_p = None
 prev_comm = prev_value = None
-for i in tqdm(pulses_to_verify, unit='pulses'):
+for i in tqdm(pulses_to_verify, unit='pulses', desc='Progress'):
     pulse = get_pulse(BASE_URL + API_VERSION + "chain/" + CHAIN_INDEX + "/pulse/" + str(i))
 
     if i != 1:
