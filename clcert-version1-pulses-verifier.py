@@ -1,5 +1,5 @@
 # Script that verifies the correctness of all the pulses generated
-# by the CLCERT Randomness Beacon.
+# by the CLCERT Randomness Beacon (version 1.0).
 # In particular, this script verifies the correctness of the following properties on each pulse:
 # - Hash of external events (-e)
 # - Slow Hash function on signature to produce final output (-o)
