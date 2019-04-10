@@ -24,7 +24,11 @@ from cryptography.hazmat.primitives import hashes
 
 def get_pulse(url):
     req = requests.get(url)
-    return json.loads(req.content)["pulse"]
+    if req.status_code == 200:
+        return json.loads(req.content)["pulse"]
+    else:
+        # TODO: how to handle not 200 request?
+        return 0
 
 
 def hashed_value(value, cipher_suite):
@@ -175,7 +179,7 @@ def verify_output_value(pulse_object, prime=None):
         h.update(message_for_output)
         return h.hexdigest().lower() == output.lower()
     elif cipher_suite == 1:
-        from sloth import SlothUnicornGenerator
+        from utils.crypto.sloth import SlothUnicornGenerator
 
         iterations = pulse_object["iterations"]
         witness = pulse_object["witness"]
@@ -387,7 +391,7 @@ for i in tqdm(pulses_to_verify, unit='pulses', desc='Progress', disable=not opti
     # CHECK OUTPUT VALUE
     if options.outp and valid_pulse(pulse):
         if prime_p is None and pulse["cipherSuite"] == 1:
-            from sloth import SlothUnicornGenerator
+            from utils.crypto.sloth import SlothUnicornGenerator
 
             max_message = '0' * 2195
             sloth1 = SlothUnicornGenerator(max_message, 1)

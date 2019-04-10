@@ -18,14 +18,13 @@ import hashlib
 from dateutil import relativedelta
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.backends import default_backend
-from cryptography.x509 import load_pem_x509_certificate
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from tqdm import tqdm
 from requests.exceptions import ConnectionError
 
-from sloth import SlothUnicornGenerator
+from utils.crypto.sloth import SlothUnicornGenerator
 
 CLCERT_BEACON_URL = "https://beacon.clcert.cl/"
 PULSE_PREFIX = "beacon/1.0/pulse/"
