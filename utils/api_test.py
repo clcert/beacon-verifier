@@ -1,15 +1,14 @@
-# Test all the routes (endpoints) availabes in the CLCERT Randomness Beacon project
+# Test all the routes (endpoints) available in the CLCERT Randomness Beacon project
 import requests
 import json
-import random
+# import random
+import secrets
 import datetime
-
 
 HOST = 'https://random.uchile.cl/'
 API_PREFIX = 'beacon/2.0/'
 LAST_PULSE_1 = 'pulse/last'
 LAST_PULSE_2 = 'chain/last/pulse/last'
-
 
 # get last pulse
 req_lp_1 = requests.get(HOST + API_PREFIX + LAST_PULSE_1)
@@ -24,7 +23,8 @@ lp_idx = json.loads(req_lp_1.content)["pulse"]["pulseIndex"]
 lc_idx = json.loads(req_lp_1.content)["pulse"]["chainIndex"]
 
 # select random pulse
-random_pulse = random.randint(1, lp_idx)
+# random_pulse = random.randint(1, lp_idx)
+random_pulse = secrets.randbelow(lp_idx - 1) + 1
 
 # generate routes for pulses by id
 LAST_PULSE_BY_ID = 'chain/' + str(lc_idx) + '/pulse/' + str(lp_idx)
@@ -41,16 +41,17 @@ if req_by_id_1.status_code != 200 and req_by_id_2.status_code != 200 and req_by_
     raise Exception('No 200 Response Code: Pulses by Id')
 
 # get last pulse timestamp
-lp_ts = int(datetime.datetime.strptime(json.loads(req_by_id_1.content)["pulse"]["timeStamp"], '%Y-%m-%dT%H:%M:%S.000Z').\
-            replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+lp_ts = int(datetime.datetime.strptime(json.loads(req_by_id_1.content)["pulse"]["timeStamp"], '%Y-%m-%dT%H:%M:%S.000Z')
+            .replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
 
 # select random timestamp
-random_ts = random.randint(lp_ts - (lp_idx * 1000), lp_ts)
+# random_ts = random.randint(lp_ts - (lp_idx * 1000), lp_ts)
+random_ts = secrets.randbelow(lp_idx * 1000) + lp_ts - (lp_idx * 1000)
 
 # generate routes for pulses by timestamp
 LAST_PULSE_BY_TS = 'pulse/time/' + str(lp_ts)
 RANDOM_PULSE_BY_TS = 'pulse/time/' + str(random_ts)
-PREV_PULSE_BY_TS =  'pulse/time/previous/' + str(random_ts)
+PREV_PULSE_BY_TS = 'pulse/time/previous/' + str(random_ts)
 NEXT_PULSE_BY_TS = 'pulse/time/next/' + str(random_ts)
 
 # get pulses by timestamp

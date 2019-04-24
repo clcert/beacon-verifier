@@ -1,5 +1,6 @@
 import io
 import random
+import secrets
 import hashlib
 import time
 
@@ -49,7 +50,8 @@ def is_probable_prime(n, k = 25):
         return True # n is definitely composite
 
     for i in range(k):
-        a = random.randrange(2, n)
+        # a = random.randrange(2, n)
+        a = secrets.randbelow(n - 2) + 2
         if try_composite(a):
             return False
 
