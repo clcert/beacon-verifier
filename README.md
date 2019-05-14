@@ -16,7 +16,7 @@ Python scripts that verifies the correctness of the values delivered by both CLC
 Each new pulse that is created by the service must be linked to previous pulses that were created before. In order to achieve that, each pulse must reference to pulses and values committed in the past. Specifically, there are some properties that each pulse in the chain must fulfill in order to preserve the consistency and correctness of the chain:
 * Correct reference to previous pulses.
 * Use of local random value committed in the valid pulse created immediately before.
-* Correct use of hash function to create output value.
+* Correct use of slow hash function (`sloth` proposed by *Arjen Lenstra and Benjamin Wesolowski* described in this [paper](https://eprint.iacr.org/2015/366) and implementation based in this [github repository](https://github.com/DusanKostic/TrxChecker)) to create output value.
 * Valid signature.
 
 The script checks all this properties for each pulse and reports if there are any pulses that doesn't fulfill some of this properties.
