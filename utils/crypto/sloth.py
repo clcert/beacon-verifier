@@ -1,3 +1,7 @@
+"""
+Sloth algorithm implementation based on https://github.com/DusanKostic/TrxChecker/blob/master/src/trx_checker.py
+Description: https://eprint.iacr.org/2015/366
+"""
 import io
 import random
 import secrets
