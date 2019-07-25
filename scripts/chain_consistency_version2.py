@@ -263,7 +263,7 @@ parser.add_argument("-v", "--verbose", action="store_true", dest="verbose", defa
 
 # Organization to verify
 org_group = parser.add_argument_group('Organization')
-org_group.add_argument("--organization", choices=['NIST', 'CLCERT', 'testing'], dest="org", type=str,
+org_group.add_argument("--organization", choices=['NIST', 'CLCERT', 'testing'], dest="org", default='CLCERT', type=str,
                        help="Select which randomness beacon service to analyze.")
 
 # Tests to execute
